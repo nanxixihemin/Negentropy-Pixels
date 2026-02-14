@@ -31,10 +31,20 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
+    const SERVER_API_KEY = process.env.GEMINI_API_KEY || 'AIzaSyA0Vi6KGzqUpFCJ0-5BA1Ks1YIPT6cBYIw'; // Set your backend key here
+
     // API 代理 - 转发 /v1 和 /v1beta 请求
     if (req.url.startsWith('/v1')) {
         try {
-            const targetUrl = API_TARGET + req.url;
+            // Construct target URL
+            const targetUrlObj = new URL(API_TARGET + req.url);
+
+            // Inject API Key if not present
+            if (!targetUrlObj.searchParams.has('key')) {
+                targetUrlObj.searchParams.append('key', SERVER_API_KEY);
+            }
+
+            const targetUrl = targetUrlObj.toString();
 
             // 收集请求体
             let body = '';

@@ -6,7 +6,7 @@ function Chat() {
   const navigate = useNavigate()
 
   // --- Settings State ---
-  const [apiKey, setApiKey] = useState('AIzaSyDmZYG9_Qoego684v-mIyCXCjEHllBiUuY')
+  const [apiKey, setApiKey] = useState('')
   const [apiUrl, setApiUrl] = useState('https://generativelanguage.googleapis.com')
   const [model, setModel] = useState('gemini-2.0-flash')
   const [showSettings, setShowSettings] = useState(false)
@@ -128,8 +128,11 @@ function Chat() {
   const sendMessage = async () => {
     if (!input.trim() || isLoading || !currentSessionId) return
 
-    if (!apiKey) {
-      alert('请先在右上角设置中配置 API Key')
+    // Check if using Google AI Studio (Gemini) handling (Default)
+    const isDefaultProxy = !apiUrl || apiUrl.includes('googleapis.com');
+
+    if (!isDefaultProxy && !apiKey) {
+      alert('使用自定义源时，请先配置 API Key')
       setShowSettings(true)
       return
     }
@@ -168,7 +171,8 @@ function Chat() {
       if (apiUrl.includes('googleapis.com')) {
         // If targeting Google API (default or explicit), use relative path to leverage our server proxy
         const baseUrl = ''
-        const endpoint = `/v1beta/models/${model}:generateContent?key=${apiKey}`
+        // Server will inject key, so we don't need it here
+        const endpoint = `/v1beta/models/${model}:generateContent`
 
         // Convert history to Gemini format
         const contents = updatedMessages.map(m => ({
@@ -364,8 +368,14 @@ function Chat() {
             </div>
 
             <div className="input-group">
-              <label>API Key</label>
-              <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} />
+              <label>API Key {(!apiUrl || apiUrl.includes('googleapis.com')) && <span style={{ fontSize: '0.8em', color: '#888' }}>(由服务器托管)</span>}</label>
+              <input
+                type="password"
+                value={apiKey}
+                onChange={e => setApiKey(e.target.value)}
+                disabled={!apiUrl || apiUrl.includes('googleapis.com')}
+                placeholder={(!apiUrl || apiUrl.includes('googleapis.com')) ? "无需填写" : "sk-..."}
+              />
             </div>
 
             <div className="input-group">

@@ -66,7 +66,7 @@ function Home() {
   const [quality, setQuality] = useState('default') // New Quality State
 
   // 模型设置 - 恢复为 Google API (用于生图)
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem('banana_home_api_key') || 'AIzaSyA0Vi6KGzqUpFCJ0-5BA1Ks1YIPT6cBYIw')
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem('banana_home_api_key') || '')
   const [apiUrl, setApiUrl] = useState(() => localStorage.getItem('banana_home_api_url') || 'https://generativelanguage.googleapis.com')
 
   // 硅基流动 Key (专门用于炼金)
@@ -582,18 +582,15 @@ function Home() {
       }
 
       // Ensure endpoint construction handles typical custom proxy paths vs official paths
-      let genaiEndpoint
+      let genaiEndpoint;
       if (baseUrl) {
-        // Custom proxy might need /v1beta or might be the full path
-        // Simple heuristic: if custom url ends with v1beta, don't append it again
-        if (baseUrl.endsWith('v1beta')) {
-          genaiEndpoint = `${baseUrl}/models/${model}:generateContent?key=${apiKey}`
-        } else {
-          genaiEndpoint = `${baseUrl}/v1beta/models/${model}:generateContent?key=${apiKey}`
-        }
+        // Custom proxy logic
+        genaiEndpoint = `${baseUrl}/v1beta/models/${model}:generateContent`;
+        // Only append key if present for external URLs (non-proxy)
+        if (apiKey) genaiEndpoint += `?key=${apiKey}`;
       } else {
-        // Default: Relative path to our server proxy
-        genaiEndpoint = `/v1beta/models/${model}:generateContent?key=${apiKey}`
+        // Default: Relative path to our server proxy (Server injects key)
+        genaiEndpoint = `/v1beta/models/${model}:generateContent`;
       }
 
       // Build parts array based on mode
@@ -740,12 +737,13 @@ function Home() {
             />
           </div>
           <div className="input-group">
-            <label>授权密钥 (API Key)</label>
+            <label>授权密钥 (API Key) {(!apiUrl || apiUrl.includes('googleapis.com')) && <span style={{ fontSize: '0.8em', color: 'rgba(255,255,255,0.5)' }}>(由服务器托管)</span>}</label>
             <input
               type="password"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
-              placeholder="sk-..."
+              disabled={!apiUrl || apiUrl.includes('googleapis.com')}
+              placeholder={(!apiUrl || apiUrl.includes('googleapis.com')) ? "无需填写 (服务器自动注入)" : "sk-..."}
             />
           </div>
         </div>

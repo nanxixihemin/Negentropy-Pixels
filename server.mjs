@@ -506,7 +506,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, '0.0.0.0', () => {
-    console.log('🍌 Banana Gen 服务器已启动!');
+    console.log('🌌 Negentropy Server Started!');
     console.log(`📍 本地访问: http://localhost:${PORT}`);
     console.log(`🌐 通过 ngrok 暴露: ngrok http ${PORT}`);
     console.log('');

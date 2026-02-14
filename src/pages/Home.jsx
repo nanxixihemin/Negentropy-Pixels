@@ -1,0 +1,1442 @@
+
+import { useState, useEffect, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
+import '../App.css'
+
+// 风格预设
+const STYLE_PRESETS = [
+  { id: 'anime', label: '动漫', suffix: ', anime style, vibrant colors, clean lines' },
+  { id: 'oil', label: '油画', suffix: ', oil painting style, rich textures, classic art' },
+  { id: 'watercolor', label: '水彩', suffix: ', watercolor painting, soft colors, fluid strokes' },
+  { id: 'cyberpunk', label: '赛博朋克', suffix: ', cyberpunk style, neon lights, futuristic' },
+  { id: 'ghibli', label: '吉卜力', suffix: ', studio ghibli style, dreamy, whimsical' },
+  { id: 'pixel', label: '像素', suffix: ', pixel art style, 8-bit, retro game' },
+  { id: 'sketch', label: '素描', suffix: ', pencil sketch, black and white, detailed shading' },
+  { id: 'photo', label: '写实', suffix: ', photorealistic, 8k, highly detailed, professional photography' },
+]
+
+// 图片比例
+const ASPECT_RATIOS = [
+  { id: '1:1', label: '1:1', width: 1024, height: 1024 },
+  { id: '16:9', label: '16:9', width: 1344, height: 768 },
+  { id: '9:16', label: '9:16', width: 768, height: 1344 },
+  { id: '4:3', label: '4:3', width: 1152, height: 896 },
+  { id: '3:4', label: '3:4', width: 896, height: 1152 },
+]
+
+// 画质/细节等级
+const QUALITY_LEVELS = [
+  { id: 'default', label: '默认', suffix: '' },
+  { id: 'high', label: '高清', suffix: ', high quality, highly detailed, sharp focus' },
+  { id: 'ultra', label: '超清', suffix: ', 8k resolution, best quality, masterpiece, ultra detailed, professional photography' },
+  { id: 'extreme', label: '极致', suffix: ', 16k, insane details, intricate, hyperdetailed, unreal engine 5 render' },
+]
+
+// 默认提示词模板
+const DEFAULT_TEMPLATES = [
+  { id: 1, name: '可爱猫咪', prompt: 'a cute fluffy cat sitting on a windowsill, sunlight' },
+  { id: 2, name: '梦幻风景', prompt: 'beautiful fantasy landscape with floating islands and waterfalls' },
+  { id: 3, name: '美食特写', prompt: 'delicious food photography, close-up, professional lighting' },
+  { id: 4, name: '未来城市', prompt: 'futuristic city skyline at sunset, flying cars, holographic ads' },
+  { id: 5, name: '人物肖像', prompt: 'portrait of a person, soft lighting, detailed features' },
+]
+
+// 模型列表
+// 模型列表
+const AVAILABLE_MODELS = [
+  { id: 'gemini-3-pro-image-preview', label: 'Gemini 3 Pro Image (Preview, 推荐)' },
+  { id: 'gemini-2.5-flash-image', label: 'Gemini 2.5 Flash Image (Fast)' },
+  { id: 'gemini-2.0-flash-exp-image-generation', label: 'Gemini 2.0 Flash Image (Exp)' },
+  { id: 'custom', label: '自定义模型...' }
+]
+
+function Home() {
+  const navigate = useNavigate()
+  const [prompt, setPrompt] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [imageUrl, setImageUrl] = useState(null)
+  const [error, setError] = useState(null)
+  const [mode, setMode] = useState('text2img') // 'text2img' | 'img2img'
+  const [uploadedImage, setUploadedImage] = useState(null) // { base64, mimeType, preview }
+  const [history, setHistory] = useState([])
+
+  // 创作增强功能状态
+  const [selectedStyle, setSelectedStyle] = useState(null)
+  const [aspectRatio, setAspectRatio] = useState('1:1')
+  const [quality, setQuality] = useState('default') // New Quality State
+
+  // 模型设置 - 恢复为 Google API (用于生图)
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem('banana_home_api_key') || 'AIzaSyA0Vi6KGzqUpFCJ0-5BA1Ks1YIPT6cBYIw')
+  const [apiUrl, setApiUrl] = useState(() => localStorage.getItem('banana_home_api_url') || 'https://generativelanguage.googleapis.com')
+
+  // 硅基流动 Key (专门用于炼金)
+  const ALCHEMY_KEY = 'sk-bvcynloojyrncymqiepnyqsvgztvmexegkfpqkfjuwtlkfvj';
+
+  // Model State
+  const [selectedModelId, setSelectedModelId] = useState(() => localStorage.getItem('banana_home_model_id') || 'gemini-3-pro-image-preview')
+  const [customModelName, setCustomModelName] = useState('')
+
+  // Persistence Effects
+  useEffect(() => { localStorage.setItem('banana_home_api_key', apiKey) }, [apiKey])
+  useEffect(() => { localStorage.setItem('banana_home_api_url', apiUrl) }, [apiUrl])
+  useEffect(() => { localStorage.setItem('banana_home_model_id', selectedModelId) }, [selectedModelId])
+  useEffect(() => { localStorage.setItem('banana_home_prompt', prompt) }, [prompt])
+  useEffect(() => {
+    if (selectedStyle) localStorage.setItem('banana_home_style', JSON.stringify(selectedStyle))
+    else localStorage.removeItem('banana_home_style')
+  }, [selectedStyle])
+  useEffect(() => { localStorage.setItem('banana_home_ratio', aspectRatio) }, [aspectRatio])
+  useEffect(() => { localStorage.setItem('banana_home_quality', quality) }, [quality]) // Save Quality
+
+  // Save History (Limit to 20 items to avoid quota issues with base64)
+  useEffect(() => {
+    try {
+      const historyToSave = history.slice(0, 20);
+      localStorage.setItem('banana_home_history', JSON.stringify(historyToSave));
+    } catch (e) {
+      console.warn('Storage quota exceeded, could not save history');
+    }
+  }, [history])
+
+  // Load Initial State
+  useEffect(() => {
+    const savedPrompt = localStorage.getItem('banana_home_prompt')
+    if (savedPrompt) setPrompt(savedPrompt)
+
+    const savedStyle = localStorage.getItem('banana_home_style')
+    if (savedStyle) setSelectedStyle(JSON.parse(savedStyle))
+
+    const savedRatio = localStorage.getItem('banana_home_ratio')
+    if (savedRatio) setAspectRatio(savedRatio)
+
+    const savedQuality = localStorage.getItem('banana_home_quality')
+    if (savedQuality) setQuality(savedQuality)
+
+    const savedHistory = localStorage.getItem('banana_home_history')
+    if (savedHistory) {
+      try {
+        setHistory(JSON.parse(savedHistory))
+      } catch (e) { console.error('Failed to parse history', e) }
+    }
+
+    // Auto-migrate invalid model ID
+    const savedModel = localStorage.getItem('banana_home_model_id')
+    if (savedModel === 'gemini-3-pro-image') {
+      setSelectedModelId('gemini-3-pro-image-preview')
+    }
+  }, [])
+
+  // Refs
+  const textareaRef = useRef(null)
+
+  // Derived model name for API
+  const model = selectedModelId === 'custom' ? customModelName : selectedModelId
+
+  // AI 提示词炼金术状态
+  const [isRefining, setIsRefining] = useState(false)
+
+  // --- 追问式炼金 (Co-pilot) 状态 (Refactored to /assistant page) ---
+  // Legacy state removed or cleaned up
+
+  // 炼金术逻辑
+
+  // 炼金术逻辑
+  const refinePrompt = async () => {
+    const textarea = textareaRef.current
+    if (!textarea || !prompt.trim()) {
+      alert('请输入一点想法，哪怕是一个词')
+      return
+    }
+
+    // Capture selection
+    const start = textarea.selectionStart
+    const end = textarea.selectionEnd
+    const hasSelection = start !== end
+    const textToRefine = hasSelection ? prompt.substring(start, end) : prompt
+
+    if (!textToRefine.trim()) {
+      alert('请选择有效的文本')
+      return
+    }
+
+    setIsRefining(true)
+    try {
+      const res = await fetch('/api/refine-prompt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: textToRefine,
+          apiKey: ALCHEMY_KEY, // 使用硅基流动 Key
+          apiUrl: 'https://api.siliconflow.cn/v1' // 使用硅基流动 URL
+        })
+      })
+
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || '炼金失败')
+
+      const refinedText = data.refinedPrompt
+
+      if (hasSelection) {
+        const newPrompt = prompt.substring(0, start) + refinedText + prompt.substring(end)
+        setPrompt(newPrompt)
+      } else {
+        setPrompt(refinedText)
+      }
+    } catch (err) {
+      alert(err.message)
+    } finally {
+      setIsRefining(false)
+    }
+  }
+
+  // ... (templates state)
+  const [customTemplates, setCustomTemplates] = useState(() => {
+    try {
+      const saved = localStorage.getItem('banana_templates')
+      return saved ? JSON.parse(saved) : []
+    } catch (e) { return [] }
+  })
+  const [hiddenTemplates, setHiddenTemplates] = useState(() => {
+    try {
+      const saved = localStorage.getItem('banana_hidden_templates')
+      return saved ? JSON.parse(saved) : []
+    } catch (e) { return [] }
+  })
+  const [showTemplates, setShowTemplates] = useState(false)
+  const [showTemplateModal, setShowTemplateModal] = useState(false)
+  const [newTemplateName, setNewTemplateName] = useState('')
+
+  // 启动副驾驶
+  const startCopilot = () => {
+    if (!prompt.trim()) {
+      alert('请先输入一个基础想法')
+      return
+    }
+    const initialMsg = { role: 'user', content: `初始想法: ${prompt}` }
+    setCopilotMessages([initialMsg])
+    setIsCopilotOpen(true)
+    handleCopilotChat([initialMsg])
+  }
+
+  // 处理对话
+  const handleCopilotChat = async (historyOverride = null) => {
+    const currentHistory = historyOverride || copilotMessages
+    const nextInput = copilotInput.trim()
+
+    let newHistory = currentHistory
+    if (!historyOverride && nextInput) {
+      newHistory = [...currentHistory, { role: 'user', content: nextInput }]
+      setCopilotMessages(newHistory)
+      setCopilotInput('')
+    }
+
+    setCopilotLoading(true)
+    try {
+      const res = await fetch('/api/alchemy-chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: newHistory,
+          apiKey: ALCHEMY_KEY
+        })
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || '对话失败')
+
+      setCopilotMessages([...newHistory, { role: 'assistant', content: data.content }])
+    } catch (err) {
+      setCopilotMessages([...newHistory, { role: 'assistant', content: `❌ 错误: ${err.message}` }])
+    } finally {
+      setCopilotLoading(false)
+    }
+  }
+
+  // 应用结果
+  const applyCopilotResult = (text) => {
+    const match = text.match(/<final_prompt>([\s\S]*?)<\/final_prompt>/i);
+    if (match && match[1]) {
+      setPrompt(match[1].trim());
+      closeCopilot(); // Use the enhanced close handler
+      setCopilotMessages([]);
+    } else {
+      alert('AI 还没有给出最终成品提示词，请继续对话或等待其包裹在标签中');
+    }
+  }
+
+  // 风格管理
+  const [customStyles, setCustomStyles] = useState(() => {
+    try {
+      const saved = localStorage.getItem('banana_styles')
+      return saved ? JSON.parse(saved) : []
+    } catch (e) { return [] }
+  })
+  const [hiddenStyles, setHiddenStyles] = useState(() => {
+    try {
+      const saved = localStorage.getItem('banana_hidden_styles')
+      return saved ? JSON.parse(saved) : []
+    } catch (e) { return [] }
+  })
+  const [showStyles, setShowStyles] = useState(false)
+  const [showStyleModal, setShowStyleModal] = useState(false)
+  const [newStyleLabel, setNewStyleLabel] = useState('')
+  const [newStyleSuffix, setNewStyleSuffix] = useState('')
+
+
+
+
+  // --- 模板管理 ---
+  const addCustomTemplate = () => {
+    if (!prompt.trim() || !newTemplateName.trim()) {
+      alert('请输入模板名称和提示词')
+      return
+    }
+    const newTemplate = {
+      id: Date.now(),
+      name: newTemplateName.trim(),
+      prompt: prompt.trim(),
+      isCustom: true
+    }
+    const updated = [...customTemplates, newTemplate]
+    setCustomTemplates(updated)
+    localStorage.setItem('banana_templates', JSON.stringify(updated))
+    setNewTemplateName('')
+    setShowTemplateModal(false)
+  }
+
+  const deleteCustomTemplate = (id) => {
+    if (!confirm('确定删除这个模板吗？')) return
+    const updated = customTemplates.filter(t => t.id !== id)
+    setCustomTemplates(updated)
+    localStorage.setItem('banana_templates', JSON.stringify(updated))
+  }
+
+  const toggleHiddenTemplate = (id) => {
+    let updated
+    if (hiddenTemplates.includes(id)) {
+      updated = hiddenTemplates.filter(hid => hid !== id)
+    } else {
+      updated = [...hiddenTemplates, id]
+    }
+    setHiddenTemplates(updated)
+    localStorage.setItem('banana_hidden_templates', JSON.stringify(updated))
+  }
+
+  // --- 风格管理 ---
+  const addCustomStyle = () => {
+    if (!newStyleLabel.trim() || !newStyleSuffix.trim()) {
+      alert('请输入风格名称和后缀')
+      return
+    }
+    const newStyle = {
+      id: 'custom_' + Date.now(),
+      label: newStyleLabel.trim(),
+      suffix: newStyleSuffix.trim(),
+      isCustom: true
+    }
+    const updated = [...customStyles, newStyle]
+    setCustomStyles(updated)
+    localStorage.setItem('banana_styles', JSON.stringify(updated))
+    setNewStyleLabel('')
+    setNewStyleSuffix('')
+    setShowStyleModal(false)
+  }
+
+  const deleteCustomStyle = (id) => {
+    if (!confirm('确定删除这个风格吗？')) return
+    const updated = customStyles.filter(s => s.id !== id)
+    setCustomStyles(updated)
+    localStorage.setItem('banana_styles', JSON.stringify(updated))
+    if (selectedStyle === id) setSelectedStyle(null)
+  }
+
+  const toggleHiddenStyle = (id) => {
+    let updated
+    if (hiddenStyles.includes(id)) {
+      updated = hiddenStyles.filter(hid => hid !== id)
+    } else {
+      updated = [...hiddenStyles, id]
+    }
+    setHiddenStyles(updated)
+    localStorage.setItem('banana_hidden_styles', JSON.stringify(updated))
+  }
+
+  // 应用模板
+  const applyTemplate = (template) => {
+    setPrompt(template.prompt)
+  }
+
+  // 切换风格
+  const toggleStyle = (styleId) => {
+    setSelectedStyle(prev => prev === styleId ? null : styleId)
+  }
+
+  // 获取最终提示词
+  const getFinalPrompt = () => {
+    let finalPrompt = prompt
+    if (selectedStyle) {
+      const allStyles = [...STYLE_PRESETS, ...customStyles]
+      const style = allStyles.find(s => s.id === selectedStyle)
+      if (style) {
+        finalPrompt += style.suffix
+      }
+    }
+    // Append Quality Suffix
+    const qualityConfig = QUALITY_LEVELS.find(q => q.id === quality)
+    if (qualityConfig) {
+      finalPrompt += qualityConfig.suffix
+    }
+    return finalPrompt
+  }
+
+  const addToHistory = (imageUrl, promptText) => {
+    try {
+      const newItem = {
+        id: Date.now(),
+        url: imageUrl,
+        prompt: promptText,
+        timestamp: Date.now()
+      }
+
+      setHistory(prev => {
+        const newHistory = [newItem, ...prev].slice(0, 20) // Limit to 20 items
+        localStorage.setItem('banana_history', JSON.stringify(newHistory))
+        return newHistory
+      })
+    } catch (e) {
+      if (e.name === 'QuotaExceededError') {
+        alert("本地存储空间已满，无法保存新图片，请删除一些旧记录。")
+      } else {
+        console.error("Failed to save history", e)
+      }
+    }
+  }
+
+  const removeFromHistory = (id) => {
+    setHistory(prev => {
+      const newHistory = prev.filter(item => item.id !== id)
+      localStorage.setItem('banana_history', JSON.stringify(newHistory))
+      return newHistory
+    })
+  }
+
+  // Plaza (共享画廊) 状态
+  const [activeTab, setActiveTab] = useState('create') // 'create' | 'plaza'
+  const [publicGallery, setPublicGallery] = useState([])
+  const [loadingGallery, setLoadingGallery] = useState(false)
+  const [sharingId, setSharingId] = useState(null)
+
+  // 昵称状态
+  const [nickname, setNickname] = useState('')
+  const [showShareModal, setShowShareModal] = useState(false)
+  const [pendingShareItem, setPendingShareItem] = useState(null)
+  const [shareWithNickname, setShareWithNickname] = useState(true)
+  const [deviceId, setDeviceId] = useState('')
+  const [shareCaption, setShareCaption] = useState('')
+
+  // 加载昵称和设备ID
+  useEffect(() => {
+    const savedNickname = localStorage.getItem('banana_nickname')
+    if (savedNickname) setNickname(savedNickname)
+
+    // 生成或获取设备唯一ID
+    let savedDeviceId = localStorage.getItem('banana_device_id')
+    if (!savedDeviceId) {
+      savedDeviceId = 'device_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9)
+      localStorage.setItem('banana_device_id', savedDeviceId)
+    }
+    setDeviceId(savedDeviceId)
+  }, [])
+
+  // 保存昵称
+  const saveNickname = (name) => {
+    setNickname(name)
+    localStorage.setItem('banana_nickname', name)
+  }
+
+  // 获取公共画廊
+  const fetchGallery = async () => {
+    setLoadingGallery(true)
+    try {
+      const res = await fetch('/api/gallery')
+      const data = await res.json()
+      setPublicGallery(data)
+    } catch (e) {
+      console.error('获取画廊失败', e)
+    } finally {
+      setLoadingGallery(false)
+    }
+  }
+
+  // 删除广场图片
+  const deletePlazaItem = async (id) => {
+    if (!confirm('确定要删除这张图片吗？')) return
+
+    try {
+      const res = await fetch(`/api/gallery/${id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deviceId })
+      })
+      const data = await res.json()
+      if (data.success) {
+        fetchGallery()
+      } else {
+        alert(data.error || '删除失败')
+      }
+    } catch (e) {
+      alert('删除失败: ' + e.message)
+    }
+  }
+
+  // 打开分享弹窗
+  const openShareModal = (item) => {
+    setPendingShareItem(item)
+    setShowShareModal(true)
+  }
+
+  // 确认分享
+  const confirmShare = async () => {
+    if (!pendingShareItem) return
+
+    setSharingId(pendingShareItem.id)
+    setShowShareModal(false)
+
+    try {
+      const res = await fetch('/api/share', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image: pendingShareItem.url,
+          prompt: pendingShareItem.prompt,
+          caption: shareCaption || null,
+          author: shareWithNickname && nickname ? nickname : null,
+          deviceId: deviceId
+        })
+      })
+      const data = await res.json()
+      if (data.success) {
+        alert('✅ 分享成功！')
+        fetchGallery()
+      } else {
+        throw new Error(data.error || '分享失败')
+      }
+    } catch (e) {
+      alert('分享失败: ' + e.message)
+    } finally {
+      setSharingId(null)
+      setPendingShareItem(null)
+      setShareCaption('')
+    }
+  }
+
+  // 切换到广场时加载数据
+  useEffect(() => {
+    if (activeTab === 'plaza') {
+      fetchGallery()
+    }
+  }, [activeTab])
+
+  const [showSettings, setShowSettings] = useState(false)
+
+  // Handle image upload for img2img mode
+  const handleImageUpload = (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      const dataUrl = event.target.result
+      const base64 = dataUrl.split(',')[1]
+      setUploadedImage({
+        base64,
+        mimeType: file.type,
+        preview: dataUrl
+      })
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const removeUploadedImage = () => {
+    setUploadedImage(null)
+  }
+
+  const generateImage = async () => {
+    if (!prompt) return
+    if (mode === 'img2img' && !uploadedImage) {
+      setError('请先上传一张参考图片')
+      return
+    }
+
+    setLoading(true)
+    setError(null)
+    setImageUrl(null)
+
+    try {
+      // API via same origin (served together)
+      // API Endpoint Logic
+      // If apiUrl is default (Google) or empty, use relative path to leverage server proxy
+      // If apiUrl is a custom absolute URL (e.g. another proxy), use it directly
+      let baseUrl = ''
+      if (apiUrl && !apiUrl.includes('googleapis.com') && apiUrl.startsWith('http')) {
+        baseUrl = apiUrl.replace(/\/$/, '') // Remove trailing slash
+      }
+
+      // Ensure endpoint construction handles typical custom proxy paths vs official paths
+      let genaiEndpoint
+      if (baseUrl) {
+        // Custom proxy might need /v1beta or might be the full path
+        // Simple heuristic: if custom url ends with v1beta, don't append it again
+        if (baseUrl.endsWith('v1beta')) {
+          genaiEndpoint = `${baseUrl}/models/${model}:generateContent?key=${apiKey}`
+        } else {
+          genaiEndpoint = `${baseUrl}/v1beta/models/${model}:generateContent?key=${apiKey}`
+        }
+      } else {
+        // Default: Relative path to our server proxy
+        genaiEndpoint = `/v1beta/models/${model}:generateContent?key=${apiKey}`
+      }
+
+      // Build parts array based on mode
+      const parts = []
+      let finalPrompt = getFinalPrompt()
+
+      // Append Aspect Ratio text description for models that support it via prompt
+      // or simply to guide the style
+      if (aspectRatio !== '1:1') {
+        finalPrompt += `, aspect ratio ${aspectRatio}`
+      }
+
+      if (mode === 'img2img' && uploadedImage) {
+        parts.push({
+          inlineData: {
+            mimeType: uploadedImage.mimeType,
+            data: uploadedImage.base64
+          }
+        })
+      }
+      parts.push({ text: finalPrompt })
+
+      const response = await fetch(genaiEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true'
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              role: "user",
+              parts
+            }
+          ]
+        })
+      })
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}))
+        throw new Error(errData.error?.message || `API Error: ${response.statusText}`)
+      }
+
+      const data = await response.json()
+
+      // Extract image from Google GenAI response format
+      let url = null
+      const candidates = data.candidates || []
+
+      for (const candidate of candidates) {
+        const parts = candidate.content?.parts || []
+        for (const part of parts) {
+          if (part.inlineData && part.inlineData.mimeType.startsWith('image/')) {
+            // Construct data URL
+            url = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`
+            break
+          }
+          // Some models might return fileUri or different format (e.g. Imagen)
+          // Handle standard text response as fallback? No, we expect image.
+        }
+        if (url) break
+      }
+
+      if (!url) {
+        // Fallback or error if no image found (maybe text returned)
+        const textPart = candidates[0]?.content?.parts?.[0]?.text
+        if (textPart) {
+          throw new Error(`生成失败，模型返回了文本而非图片: "${textPart.substring(0, 50)}..."`)
+        }
+        throw new Error('未在响应中找到图片数据')
+      }
+
+      setImageUrl(url)
+      // Save original prompt (without style suffix for display?) or with? 
+      // Usually user wants to see what they typed, but maybe saving full prompt is better for reproducibility.
+      // Let's save the final prompt.
+      addToHistory(url, finalPrompt)
+    } catch (err) {
+      console.error(err)
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+
+  return (
+    <div className="app-container">
+      <header className="app-header">
+        <div className="header-top-row">
+          <h1 className="art-title">Negentropy Pixels</h1>
+          <button
+            className="settings-btn"
+            onClick={() => setShowSettings(!showSettings)}
+            title="设置"
+          >
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="#5D5D5D">
+              <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"></path>
+            </svg>
+            <span style={{ marginLeft: '4px', fontSize: '0.9rem', fontWeight: '800' }}>设置</span>
+          </button>
+        </div>
+
+
+
+
+
+        <div className="manifesto-container">
+          <h2 className="manifesto-main">
+            <span className="chaos-text">无序归零</span>
+            <span className="order-text">秩序新生</span>
+          </h2>
+          <h3 className="manifesto-sub">于像素微尘，见构筑宏构</h3>
+          <div className="manifesto-footer">
+            <button
+              className="chat-trigger-btn"
+              onClick={() => navigate('/chat')}
+            >
+              勾勒
+            </button>
+            <p className="manifesto-caption">—— 每一瞬，皆是精密重构</p>
+          </div>
+        </div>
+
+
+
+
+      </header>
+
+      {showSettings && (
+        <div className="card settings-section glass-effect">
+          <div className="settings-header">
+            <h3>⚙️ 代理与密钥配置</h3>
+            <button className="close-mini-btn" onClick={() => setShowSettings(false)}>×</button>
+          </div>
+          <p className="hint">配置您的 OpenAI 兼容代理地址与 Sk 密钥。此项设置将同时应用于图片生成与“炼金”加速。</p>
+          <div className="input-group">
+            <label>代理地址 (API Endpoint)</label>
+            <input
+              type="text"
+              value={apiUrl}
+              onChange={(e) => setApiUrl(e.target.value)}
+              placeholder="/v1/chat/completions"
+            />
+          </div>
+          <div className="input-group">
+            <label>授权密钥 (API Key)</label>
+            <input
+              type="password"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="sk-..."
+            />
+          </div>
+        </div>
+      )}
+
+
+
+      <main className="main-content">
+
+
+        {/* Top-level Tab Navigation */}
+        <div className="top-tabs">
+          <button
+            className={`top-tab ${activeTab === 'create' ? 'active' : ''}`}
+            onClick={() => setActiveTab('create')}
+          >
+            创作
+          </button>
+          <button
+            className={`top-tab ${activeTab === 'history' ? 'active' : ''}`}
+            onClick={() => setActiveTab('history')}
+          >
+            印记
+          </button>
+          <button
+            className={`top-tab ${activeTab === 'plaza' ? 'active' : ''}`}
+            onClick={() => setActiveTab('plaza')}
+          >
+            共振
+          </button>
+        </div>
+
+        {/* Create Tab Content */}
+        {activeTab === 'create' && (
+          <>
+            {/* Mode Switch */}
+            <div className="mode-switch">
+              <button
+                className={`mode-btn ${mode === 'text2img' ? 'active' : ''}`}
+                onClick={() => setMode('text2img')}
+              >
+                文生图
+              </button>
+              <button
+                className={`mode-btn ${mode === 'img2img' ? 'active' : ''}`}
+                onClick={() => setMode('img2img')}
+              >
+                图生图
+              </button>
+            </div>
+
+            <div className="card input-section">
+              {/* Image Upload for img2img mode */}
+              {mode === 'img2img' && (
+                <div className="upload-zone-wrapper">
+                  <label>上传参考图片</label>
+                  {!uploadedImage ? (
+                    <label className="upload-zone">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleImageUpload}
+                        hidden
+                      />
+                      <span>点击上传参考图片</span>
+                    </label>
+                  ) : (
+                    <div className="image-preview-wrapper">
+                      <img src={uploadedImage.preview} alt="Uploaded" className="image-preview" />
+                      <button className="remove-btn" onClick={removeUploadedImage}>删除</button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="input-label-row">
+                <label htmlFor="prompt-input">
+                  {mode === 'img2img' ? '描述你想要的变化' : '描述你想要的图片'}
+                </label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    className={`alchemy-btn ${isRefining ? 'loading' : ''}`}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={refinePrompt}
+                    disabled={isRefining}
+                    title="瞬间让 AI 帮你写提示词"
+                  >
+                    {isRefining ? '炼金中...' : '快速炼金 ✨'}
+                  </button>
+                  <button
+                    className="manage-btn"
+                    style={{ background: 'var(--secondary)', color: 'white', border: 'none' }}
+                    onClick={() => navigate('/assistant')}
+                    title="让 AI 引导你完善细节"
+                  >
+                    提示词助手
+                  </button>
+                </div>
+              </div>
+
+              {/* 提示词模板区域 */}
+              <div className="feature-section">
+                <div className="feature-header">
+                  <div
+                    className="feature-toggle"
+                    onClick={() => setShowTemplates(!showTemplates)}
+                  >
+                    <span className="toggle-icon">{showTemplates ? '[收起]' : '[展开]'}</span>
+                    <span className="feature-label">提示词模板</span>
+                  </div>
+                  {showTemplates && (
+                    <button
+                      className="manage-btn"
+                      onClick={() => setShowTemplateModal(true)}
+                      title="管理模板"
+                    >
+                      管理
+                    </button>
+                  )}
+                </div>
+
+                {showTemplates && (
+                  <div className="template-bar">
+                    <select
+                      className="template-select"
+                      onChange={(e) => {
+                        const id = e.target.value
+                        if (!id) return
+                        const allTemplates = [...DEFAULT_TEMPLATES, ...customTemplates]
+                        // 找到模板（注意类型转换）
+                        const template = allTemplates.find(t => t.id.toString() === id.toString())
+                        if (template) applyTemplate(template)
+                        e.target.value = ''
+                      }}
+                    >
+                      <option value="">选择模板...</option>
+                      <optgroup label="预设模板">
+                        {DEFAULT_TEMPLATES.filter(t => !hiddenTemplates.includes(t.id)).map(t => (
+                          <option key={t.id} value={t.id}>{t.name}</option>
+                        ))}
+                      </optgroup>
+                      {customTemplates.length > 0 && (
+                        <optgroup label="我的模板">
+                          {customTemplates.map(t => (
+                            <option key={t.id} value={t.id}>{t.name}</option>
+                          ))}
+                        </optgroup>
+                      )}
+                    </select>
+                    <button
+                      className="save-template-btn"
+                      onClick={() => {
+                        setNewTemplateName('')
+                        setShowTemplateModal(true)
+                      }}
+                      title="添加/管理模板"
+                    >
+                      ➕
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <textarea
+                ref={textareaRef}
+                id="prompt-input"
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                placeholder={mode === 'img2img' ? '把这张图片变成卡通风格...' : 'A futuristic city with flying cars...'}
+                rows={3}
+              />
+
+              {/* 风格预设区域 */}
+              <div className="feature-section">
+                <div className="feature-header">
+                  <div
+                    className="feature-toggle"
+                    onClick={() => setShowStyles(!showStyles)}
+                  >
+                    <span className="toggle-icon">{showStyles ? '[收起]' : '[展开]'}</span>
+                    <span className="feature-label">风格预设</span>
+                  </div>
+                  {showStyles && (
+                    <button
+                      className="manage-btn"
+                      onClick={() => setShowStyleModal(true)}
+                      title="管理风格"
+                    >
+                      管理
+                    </button>
+                  )}
+                </div>
+
+                {showStyles && (
+                  <div className="style-presets">
+                    <div className="style-tags">
+                      {/* 渲染所有非隐藏的风格 */}
+                      {[...STYLE_PRESETS, ...customStyles]
+                        .filter(s => !hiddenStyles.includes(s.id))
+                        .map(style => (
+                          <button
+                            key={style.id}
+                            className={`style-tag ${selectedStyle === style.id ? 'active' : ''}`}
+                            onClick={() => toggleStyle(style.id)}
+                          >
+                            {style.label}
+                          </button>
+                        ))
+                      }
+                      <button
+                        className="style-tag add-style"
+                        onClick={() => setShowStyleModal(true)}
+                      >
+                        添加
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 模型选择 */}
+              <div className="model-selector-section">
+                <label className="section-label">AI 模型</label>
+                <div className="model-controls">
+                  <select
+                    className="model-select"
+                    value={selectedModelId}
+                    onChange={(e) => setSelectedModelId(e.target.value)}
+                  >
+                    {AVAILABLE_MODELS.map(m => (
+                      <option key={m.id} value={m.id}>{m.label}</option>
+                    ))}
+                  </select>
+
+                  {selectedModelId === 'custom' && (
+                    <input
+                      type="text"
+                      className="custom-model-input"
+                      placeholder="输入模型名称 (如 gemini-1.5-pro)"
+                      value={customModelName}
+                      onChange={(e) => setCustomModelName(e.target.value)}
+                    />
+                  )}
+                </div>
+              </div>
+
+              {/* 图片比例选择 */}
+              {/* Pictures Ratio and Quality Selection */}
+              {/* Pictures Ratio and Quality Selection */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
+                <div className="aspect-ratio-selector">
+                  <span className="ratio-label" style={{ minWidth: '40px' }}>比例</span>
+                  <div className="ratio-options">
+                    {ASPECT_RATIOS.map(ratio => (
+                      <button
+                        key={ratio.id}
+                        className={`ratio-btn ${aspectRatio === ratio.id ? 'active' : ''}`}
+                        onClick={() => setAspectRatio(ratio.id)}
+                      >
+                        {ratio.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="aspect-ratio-selector">
+                  <span className="ratio-label" style={{ minWidth: '40px' }}>画质</span>
+                  <div className="ratio-options">
+                    {QUALITY_LEVELS.map(q => (
+                      <button
+                        key={q.id}
+                        className={`ratio-btn ${quality === q.id ? 'active' : ''}`}
+                        onClick={() => setQuality(q.id)}
+                      >
+                        {q.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <button
+                className="generate-btn"
+                onClick={generateImage}
+                disabled={loading || !prompt || (mode === 'img2img' && !uploadedImage)}
+              >
+                {loading ? '生成中...' : '生成图片'}
+              </button>
+            </div>
+
+            {error && <div className="error-message">{error}</div>}
+
+
+            {imageUrl && (
+              <div className="card result-section">
+                <img
+                  src={imageUrl}
+                  alt="Generated result"
+                  className="generated-image"
+                  style={{ aspectRatio: aspectRatio.replace(':', '/') }}
+                />
+                <div className="action-buttons" style={{ marginTop: '16px' }}>
+                  <a
+                    href={imageUrl}
+                    download={`banana-gen-${Date.now()}.jpg`}
+                    className="action-btn" // Use action-btn style from new CSS
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ flex: 1, textDecoration: 'none', justifyContent: 'center' }}
+                  >
+                    下载图片
+                  </a>
+                </div>
+              </div>
+            )}
+
+            {/* History Gallery (Moved to History Tab) */}
+          </>
+        )}
+
+        {/* History Tab Content (Separated) */}
+        {activeTab === 'history' && (
+          <div className="history-section" style={{ marginTop: 0 }}>
+            <h3>历史画廊</h3>
+            <p className="negentropy-dynamic" style={{ marginBottom: '24px' }}>
+              在混沌的数据流中，截取逆熵的瞬间
+            </p>
+
+            {history.length === 0 ? (
+              <div className="empty-plaza" style={{ textAlign: 'center', padding: '40px', color: '#999' }}>
+                <p>还没有历史记录，快去创作吧！✨</p>
+              </div>
+            ) : (
+              <div className="history-grid">
+                {history.map((item) => (
+                  <div key={item.id} className="history-item">
+                    <img
+                      src={item.url}
+                      alt={item.prompt}
+                      className="history-thumbnail"
+                      onClick={() => {
+                        setImageUrl(item.url)
+                        setPrompt(item.prompt)
+                        setActiveTab('create') // Jump back to create
+                        window.scrollTo({ top: 0, behavior: 'smooth' })
+                      }}
+                    />
+                    <div className="history-actions">
+                      <button
+                        className="history-action-btn delete"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          removeFromHistory(item.id)
+                        }}
+                        title="删除"
+                      >
+                        删除
+                      </button>
+                      <button
+                        className="history-action-btn share"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          openShareModal(item)
+                        }}
+                        disabled={sharingId === item.id}
+                        title="分享到广场"
+                      >
+                        {sharingId === item.id ? '...' : '分享'}
+                      </button>
+                      <a
+                        href={item.url}
+                        download={`banana-gen-${item.id}.jpg`}
+                        className="history-action-btn download"
+                        onClick={(e) => e.stopPropagation()}
+                        title="下载"
+                      >
+                        下载
+                      </a>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {history.length >= 20 && (
+              <p className="history-limit-hint">仅保存最近 20 张图片以节省空间</p>
+            )}
+          </div>
+        )}
+
+
+        {/* Plaza Tab Content */}
+        {activeTab === 'plaza' && (
+          <div className="plaza-section">
+            <h3>共振</h3>
+            <p className="plaza-slogan">每一份构思，必有回响</p>
+            <p className="plaza-hint">这里展示大家分享的作品，快去创作并分享你的作品吧！</p>
+
+            {loadingGallery ? (
+              <div className="loading-text">加载中...</div>
+            ) : publicGallery.length === 0 ? (
+              <div className="empty-plaza">
+                <p>还没有作品，成为第一个分享的人吧！</p>
+              </div>
+            ) : (
+              <div className="plaza-grid">
+                {publicGallery.map((item) => (
+                  <div key={item.id} className="plaza-item">
+                    <img
+                      src={`/uploads/${item.filename}`}
+                      alt={item.prompt}
+                      className="plaza-thumbnail"
+                    />
+                    {item.deviceId === deviceId && (
+                      <button
+                        className="plaza-delete-btn"
+                        onClick={() => deletePlazaItem(item.id)}
+                        title="删除我的分享"
+                      >
+                        删除
+                      </button>
+                    )}
+                    <div className="plaza-info">
+                      {item.author && (
+                        <div className="plaza-author">
+                          <span className="author-avatar" style={{
+                            background: `hsl(${item.author.charCodeAt(0) * 137 % 360}, 70%, 60%)`
+                          }}>
+                            {item.author.charAt(0).toUpperCase()}
+                          </span>
+                          {item.author}
+                        </div>
+                      )}
+                      {item.prompt && (
+                        <div className="plaza-prompt"><span className="badge-tag">提示词</span> {item.prompt}</div>
+                      )}
+                      {item.caption && (
+                        <div className="plaza-caption"><span className="badge-tag">感悟</span> {item.caption}</div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </main>
+
+      {/* Share Modal */}
+      {
+        showShareModal && (
+          <div className="modal-overlay" onClick={() => setShowShareModal(false)}>
+            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+              <h3>分享到共振</h3>
+
+              <div className="modal-field">
+                <label>您的昵称</label>
+                <input
+                  type="text"
+                  value={nickname}
+                  onChange={(e) => saveNickname(e.target.value)}
+                  placeholder="输入昵称（可选）"
+                  maxLength={20}
+                />
+              </div>
+
+              <div className="modal-field">
+                <label>分享感悟</label>
+                <textarea
+                  value={shareCaption}
+                  onChange={(e) => setShareCaption(e.target.value)}
+                  placeholder="写点想法或感悟吧~（可选）"
+                  maxLength={100}
+                  rows={2}
+                />
+              </div>
+
+              <label className="modal-checkbox">
+                <input
+                  type="checkbox"
+                  checked={shareWithNickname}
+                  onChange={(e) => setShareWithNickname(e.target.checked)}
+                />
+                在共振显示我的昵称
+              </label>
+
+              <div className="modal-buttons">
+                <button className="modal-btn cancel" onClick={() => setShowShareModal(false)}>
+                  取消
+                </button>
+                <button className="modal-btn confirm" onClick={confirmShare}>
+                  确认分享
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      }
+
+      {/* Template Management Modal */}
+      {
+        showTemplateModal && (
+          <div className="modal-overlay" onClick={() => setShowTemplateModal(false)}>
+            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+              <h3>📋 管理提示词模板</h3>
+
+              <div className="modal-section">
+                <h4>新建模板</h4>
+                <div className="modal-field">
+                  <input
+                    type="text"
+                    value={newTemplateName}
+                    onChange={(e) => setNewTemplateName(e.target.value)}
+                    placeholder="模板名称"
+                    maxLength={20}
+                  />
+                </div>
+                <div className="template-preview">{prompt || '（当前提示词为空）'}</div>
+                <button
+                  className="modal-btn confirm"
+                  onClick={addCustomTemplate}
+                  disabled={!prompt.trim() || !newTemplateName.trim()}
+                  style={{ marginTop: 10 }}
+                >
+                  保存当前提示词为模板
+                </button>
+              </div>
+
+              <div className="modal-section list-section">
+                <h4>已有模板</h4>
+                <div className="manage-list">
+                  {/* 预设模板 - 只显示未隐藏的 */}
+                  {DEFAULT_TEMPLATES.filter(t => !hiddenTemplates.includes(t.id)).map(t => (
+                    <div key={t.id} className="manage-item">
+                      <span className="item-name">{t.name} <span className="tag">预设</span></span>
+                      <button
+                        className="icon-btn delete"
+                        onClick={() => toggleHiddenTemplate(t.id)}
+                        title="删除"
+                      >
+                        🗑️
+                      </button>
+                    </div>
+                  ))}
+                  {/* 自定义模板 */}
+                  {customTemplates.map(t => (
+                    <div key={t.id} className="manage-item">
+                      <span className="item-name">{t.name}</span>
+                      <button
+                        className="icon-btn delete"
+                        onClick={() => deleteCustomTemplate(t.id)}
+                        title="删除"
+                      >
+                        �️
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                {/* 恢复已删除的预设 */}
+                {hiddenTemplates.length > 0 && (
+                  <div className="restore-section">
+                    <h4>恢复已删除预设</h4>
+                    <div className="manage-list">
+                      {DEFAULT_TEMPLATES.filter(t => hiddenTemplates.includes(t.id)).map(t => (
+                        <div key={t.id} className="manage-item restore-item">
+                          <span className="item-name hidden-item">{t.name}</span>
+                          <button
+                            className="icon-btn restore"
+                            onClick={() => toggleHiddenTemplate(t.id)}
+                            title="恢复"
+                          >
+                            ♻️
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <button className="modal-btn cancel width-100" onClick={() => setShowTemplateModal(false)}>
+                关闭
+              </button>
+            </div>
+          </div>
+        )
+      }
+
+      {/* Style Management Modal */}
+      {
+        showStyleModal && (
+          <div className="modal-overlay" onClick={() => setShowStyleModal(false)}>
+            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+              <h3>🎨 管理风格预设</h3>
+
+              <div className="modal-section">
+                <h4>新建风格</h4>
+                <div className="modal-field">
+                  <input
+                    type="text"
+                    value={newStyleLabel}
+                    onChange={(e) => setNewStyleLabel(e.target.value)}
+                    placeholder="风格名称 (如: 赛博朋克)"
+                    maxLength={10}
+                  />
+                </div>
+                <div className="modal-field">
+                  <input
+                    type="text"
+                    value={newStyleSuffix}
+                    onChange={(e) => setNewStyleSuffix(e.target.value)}
+                    placeholder="提示词后缀 (如: , cyberpunk style...)"
+                  />
+                </div>
+                <button
+                  className="modal-btn confirm"
+                  onClick={addCustomStyle}
+                  disabled={!newStyleLabel.trim() || !newStyleSuffix.trim()}
+                  style={{ marginTop: 10 }}
+                >
+                  添加新风格
+                </button>
+              </div>
+
+              <div className="modal-section list-section">
+                <h4>已有风格</h4>
+                <div className="manage-list">
+                  {/* 预设风格 - 只显示未隐藏的 */}
+                  {STYLE_PRESETS.filter(s => !hiddenStyles.includes(s.id)).map(s => (
+                    <div key={s.id} className="manage-item">
+                      <span className="item-name">{s.label} <span className="tag">预设</span></span>
+                      <button
+                        className="icon-btn delete"
+                        onClick={() => toggleHiddenStyle(s.id)}
+                        title="删除"
+                      >
+                        删除
+                      </button>
+                    </div>
+                  ))}
+                  {/* 自定义风格 */}
+                  {customStyles.map(s => (
+                    <div key={s.id} className="manage-item">
+                      <span className="item-name">{s.label}</span>
+                      <button
+                        className="icon-btn delete"
+                        onClick={() => deleteCustomStyle(s.id)}
+                        title="删除"
+                      >
+                        删除
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                {/* 恢复已删除的预设 */}
+                {hiddenStyles.length > 0 && (
+                  <div className="restore-section">
+                    <h4>恢复已删除预设</h4>
+                    <div className="manage-list">
+                      {STYLE_PRESETS.filter(s => hiddenStyles.includes(s.id)).map(s => (
+                        <div key={s.id} className="manage-item restore-item">
+                          <span className="item-name hidden-item">{s.label}</span>
+                          <button
+                            className="icon-btn restore"
+                            onClick={() => toggleHiddenStyle(s.id)}
+                            title="恢复"
+                          >
+                            恢复
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <button className="modal-btn cancel width-100" onClick={() => setShowStyleModal(false)}>
+                关闭
+              </button>
+            </div>
+          </div>
+        )
+      }
+
+      <footer className="app-footer">
+        Powered by Banana Pro & Google Antigravity
+
+      </footer>
+    </div >
+  )
+}
+
+export default Home

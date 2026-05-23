@@ -2,6 +2,17 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import '../App.css'
 
+const PRESET_MODELS = [
+  'gemini-2.0-flash',
+  'gemini-2.0-flash-lite',
+  'gemini-2.0-flash-001',
+  'gemini-2.5-flash',
+  'gemini-1.5-flash',
+  'gpt-4o',
+  'gpt-4o-mini',
+  'deepseek-chat'
+];
+
 function Chat() {
   const navigate = useNavigate()
 
@@ -346,21 +357,36 @@ function Chat() {
             <div className="input-group">
               <label>Model (模型选择)</label>
               <select
-                value={model}
-                onChange={e => setModel(e.target.value)}
+                value={!PRESET_MODELS.includes(model) ? 'custom' : model}
+                onChange={e => {
+                  const val = e.target.value;
+                  if (val === 'custom') {
+                    setModel('custom-model-id');
+                  } else {
+                    setModel(val);
+                  }
+                }}
                 style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid #ddd' }}
               >
-                <option value="gemini-2.0-flash">Gemini 2.0 Flash (推荐)</option>
-                <option value="gemini-2.0-flash-lite">Gemini 2.0 Flash Lite (极速)</option>
-                <option value="gemini-2.0-flash-001">Gemini 2.0 Flash-001 (稳定)</option>
-                <option value="gemini-2.5-flash">Gemini 2.5 Flash (最新)</option>
-                <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+                <optgroup label="Gemini 模型">
+                  <option value="gemini-2.0-flash">Gemini 2.0 Flash (推荐)</option>
+                  <option value="gemini-2.0-flash-lite">Gemini 2.0 Flash Lite (极速)</option>
+                  <option value="gemini-2.0-flash-001">Gemini 2.0 Flash-001 (稳定)</option>
+                  <option value="gemini-2.5-flash">Gemini 2.5 Flash (最新)</option>
+                  <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+                </optgroup>
+                <optgroup label="GPT (OpenAI / DeepSeek 等)">
+                  <option value="gpt-4o">GPT-4o (OpenAI)</option>
+                  <option value="gpt-4o-mini">GPT-4o-mini (OpenAI)</option>
+                  <option value="deepseek-chat">DeepSeek Chat</option>
+                </optgroup>
                 <option value="custom">自定义...</option>
               </select>
-              {model === 'custom' && (
+              {!PRESET_MODELS.includes(model) && (
                 <input
                   type="text"
                   placeholder="输入模型 ID"
+                  value={model === 'custom-model-id' ? '' : model}
                   onChange={e => setModel(e.target.value)}
                   style={{ marginTop: '5px' }}
                 />

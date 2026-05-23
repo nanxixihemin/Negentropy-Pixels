@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { Buffer } from 'buffer';
+import 'dotenv/config';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -19,6 +20,109 @@ const MIME_TYPES = {
     '.svg': 'image/svg+xml',
 };
 
+// 通用 LLM 调用辅助函数 - 兼容 Gemini 和 OpenAI-compatible (GPT) 接口
+async function callLLMChat({ messages, apiKey, apiUrl, model }) {
+    const isGemini = (!apiUrl || apiUrl.includes('googleapis.com') || (model && model.startsWith('gemini')));
+
+    if (isGemini) {
+        const resolvedApiKey = apiKey || process.env.GEMINI_API_KEY;
+        if (!resolvedApiKey) {
+            throw new Error('未配置 Gemini API Key');
+        }
+
+        let baseUrl = 'https://generativelanguage.googleapis.com';
+        if (apiUrl && apiUrl.startsWith('http')) {
+            baseUrl = apiUrl.replace(/\/$/, '');
+        }
+
+        const modelName = model || 'gemini-1.5-flash';
+        const apiPath = baseUrl.includes('/v1beta') ? '' : '/v1beta';
+        const endpoint = `${baseUrl}${apiPath}/models/${modelName}:generateContent?key=${resolvedApiKey}`;
+
+        const contents = messages.map(msg => ({
+            role: msg.role === 'user' ? 'user' : 'model',
+            parts: [{ text: msg.content }]
+        }));
+
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents,
+                generationConfig: {
+                    temperature: 0.7,
+                    maxOutputTokens: 1000
+                }
+            })
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.error?.message || `Gemini API Error: ${response.statusText}`);
+        }
+
+        const reply = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+        if (!reply) {
+            throw new Error('未在 Gemini 响应中找到文本数据');
+        }
+        return reply;
+    } else {
+        const resolvedApiKey = apiKey || process.env.GPT_API_KEY || process.env.SILICON_API_KEY;
+        const resolvedApiUrl = apiUrl || process.env.GPT_API_URL || 'https://api.siliconflow.cn/v1';
+        const modelName = model || process.env.GPT_MODEL_NAME || 'deepseek-ai/DeepSeek-V3';
+
+        if (!resolvedApiKey) {
+            throw new Error('未配置 API Key');
+        }
+
+        let endpoint = resolvedApiUrl;
+        if (!endpoint.endsWith('/chat/completions') && !endpoint.endsWith('/completions')) {
+            endpoint = endpoint.replace(/\/$/, '') + '/chat/completions';
+        }
+
+        const formattedMessages = messages.map(msg => ({
+            role: msg.role === 'model' || msg.role === 'assistant' ? 'assistant' : (msg.role === 'system' ? 'system' : 'user'),
+            content: msg.content
+        }));
+
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${resolvedApiKey}`
+            },
+            body: JSON.stringify({
+                model: modelName,
+                messages: formattedMessages,
+                temperature: 0.7
+            })
+        });
+
+        const rawText = await response.text();
+        if (!response.ok) {
+            let errDetail = rawText;
+            try {
+                const parsed = JSON.parse(rawText);
+                errDetail = parsed.error?.message || parsed.error || rawText;
+            } catch (e) {}
+            throw new Error(`GPT API Error (${response.status}): ${errDetail}`);
+        }
+
+        let data;
+        try {
+            data = JSON.parse(rawText);
+        } catch (e) {
+            throw new Error(`GPT API 返回非 JSON 格式数据: ${rawText.substring(0, 100)}`);
+        }
+
+        const reply = data.choices?.[0]?.message?.content?.trim();
+        if (reply === undefined || reply === null) {
+            throw new Error('未在 GPT 响应中找到文本数据');
+        }
+        return reply;
+    }
+}
+
 const server = http.createServer(async (req, res) => {
     // 添加 CORS 头
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -31,7 +135,16 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
-    const SERVER_API_KEY = process.env.GEMINI_API_KEY || 'AIzaSyA0Vi6KGzqUpFCJ0-5BA1Ks1YIPT6cBYIw'; // Set your backend key here
+    const SERVER_API_KEY = process.env.GEMINI_API_KEY;
+    const ALCHEMY_KEY = process.env.SILICON_API_KEY;
+
+    if (!SERVER_API_KEY) {
+        console.warn("⚠️ Warning: GEMINI_API_KEY is not set in .env file.");
+    }
+
+    if (!ALCHEMY_KEY) {
+        console.warn("⚠️ Warning: SILICON_API_KEY is not set in .env file.");
+    }
 
     // API 代理 - 转发 /v1 和 /v1beta 请求
     if (req.url.startsWith('/v1')) {
@@ -76,16 +189,16 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ============ AI 提示词炼金术 API ============
-    // POST /api/refine-prompt - 使用 SiliconFlow 重构提示词
+    // POST /api/refine-prompt - 重构提示词 (支持自定义 GPT/OpenAI)
     if (req.url === '/api/refine-prompt' && req.method === 'POST') {
-        console.log('[Alchemy] 收到炼金请求 (SiliconFlow)');
+        console.log('[Alchemy] 收到炼金请求');
         try {
             const chunks = [];
             for await (const chunk of req) {
                 chunks.push(chunk);
             }
             const body = JSON.parse(Buffer.concat(chunks).toString());
-            const { prompt, apiKey, apiUrl } = body;
+            const { prompt, apiKey, apiUrl, model } = body;
 
             if (!prompt) {
                 res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -93,73 +206,18 @@ const server = http.createServer(async (req, res) => {
                 return;
             }
 
-            if (!apiKey) {
-                res.writeHead(400, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ error: '请先配置 API Key' }));
-                return;
-            }
-
-            // 构建 SiliconFlow (OpenAI Compatible) API 请求
-            const siliconFlowBaseUrl = 'https://api.siliconflow.cn/v1';
-            const endpoint = `${siliconFlowBaseUrl}/chat/completions`;
-
-            // 使用免费/高性价比模型
-            const modelName = 'deepseek-ai/DeepSeek-V3';
-
             const systemPrompt = `你是一个专业的 AI 图像生成提示词工程师。用户会给你一个简单的想法，你需要将其扩展成一个详细、富有艺术感的图像生成提示词（English）。请直接返回提示词，不要啰嗦。`;
+            const messages = [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: prompt }
+            ];
 
-            const requestBody = {
-                model: modelName,
-                messages: [
-                    { role: "system", content: systemPrompt },
-                    { role: "user", content: prompt }
-                ],
-                stream: false,
-                max_tokens: 512,
-                temperature: 0.7
-            };
-
-            console.log(`[Alchemy] 调用 SiliconFlow (${modelName})...`);
-
-            const llmRes = await fetch(endpoint, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${apiKey}`
-                },
-                body: JSON.stringify(requestBody)
-            });
-
-            const rawText = await llmRes.text();
-
-            if (!llmRes.ok) {
-                console.log(`[Alchemy] 错误响应 (Status: ${llmRes.status}):`, rawText.substring(0, 200));
-                res.writeHead(llmRes.status, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ error: `SiliconFlow Error: ${llmRes.status}` }));
-                return;
-            }
-
-            let llmData;
-            try {
-                llmData = JSON.parse(rawText);
-            } catch (e) {
-                console.error(`[Alchemy] 响应不是 JSON:`, rawText);
-                throw new Error(`Invalid JSON response from LLM`);
-            }
-
-            const refinedPrompt = llmData.choices?.[0]?.message?.content?.trim();
-
-            if (!refinedPrompt) {
-                console.error('[Alchemy] 无法解析响应:', llmData);
-                res.writeHead(500, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ error: '无法解析 LLM 响应' }));
-                return;
-            }
+            console.log(`[Alchemy] 调用 LLM 进行提示词提炼...`);
+            const refinedPrompt = await callLLMChat({ messages, apiKey, apiUrl, model });
 
             console.log('[Alchemy] 炼金成功:', refinedPrompt.substring(0, 50) + '...');
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ refinedPrompt }));
-
         } catch (err) {
             console.error('[Alchemy] 内部错误:', err);
             res.writeHead(500, { 'Content-Type': 'application/json' });
@@ -174,7 +232,7 @@ const server = http.createServer(async (req, res) => {
         try {
             const chunks = [];
             for await (const chunk of req) chunks.push(chunk);
-            const { messages, apiKey } = JSON.parse(Buffer.concat(chunks).toString());
+            const { messages, apiKey, apiUrl, model } = JSON.parse(Buffer.concat(chunks).toString());
 
             const systemPrompt = `你是一个专业的 AI 图像生成提示词专家副驾驶。
 你的任务是通过与用户对话，通过一步一问的方式，引导用户补全画面的细节（颜色、构图、光影、材质等）。
@@ -185,32 +243,16 @@ const server = http.createServer(async (req, res) => {
 4. 最终结果必须包裹在 <final_prompt> 标签中，例如: <final_prompt>A highly detailed oil painting of a cat...</final_prompt>。
 5. 最终提示词必须是英文。`;
 
-            const requestBody = {
-                model: 'deepseek-ai/DeepSeek-V3',
-                messages: [
-                    { role: "system", content: systemPrompt },
-                    ...messages
-                ],
-                stream: false,
-                temperature: 0.7
-            };
+            const fullMessages = [
+                { role: "system", content: systemPrompt },
+                ...messages
+            ];
 
-            const llmRes = await fetch('https://api.siliconflow.cn/v1/chat/completions', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${apiKey}`
-                },
-                body: JSON.stringify(requestBody)
-            });
+            console.log(`[Alchemy-Chat] 调用 LLM 进行副驾驶对话...`);
+            const content = await callLLMChat({ messages: fullMessages, apiKey, apiUrl, model });
 
-            const data = await llmRes.json();
-            if (!llmRes.ok) throw new Error(data.error?.message || 'LLM 请求失败');
-
-            const content = data.choices[0].message.content;
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ content }));
-
         } catch (err) {
             console.error('[Alchemy-Chat] 错误:', err);
             res.writeHead(500, { 'Content-Type': 'application/json' });
@@ -219,7 +261,7 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
-    // --- AI Chat Route (New) ---
+    // --- AI Chat Route ---
     if (req.url === '/api/chat' && req.method === 'POST') {
         console.log('[Chat] 收到对话请求');
         try {
@@ -228,7 +270,7 @@ const server = http.createServer(async (req, res) => {
                 chunks.push(chunk);
             }
             const body = JSON.parse(Buffer.concat(chunks).toString());
-            const { messages, apiKey, apiUrl } = body;
+            const { messages, apiKey, apiUrl, model } = body;
 
             if (!messages || !Array.isArray(messages)) {
                 res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -236,71 +278,11 @@ const server = http.createServer(async (req, res) => {
                 return;
             }
 
-            if (!apiKey) {
-                res.writeHead(400, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ error: '请先配置 API Key' }));
-                return;
-            }
-
-            // Proxy Logic (Dynamic)
-            let geminiBaseUrl = 'http://127.0.0.1:8045/v1beta';
-            if (apiUrl && apiUrl.startsWith('http')) {
-                try {
-                    const urlObj = new URL(apiUrl);
-                    geminiBaseUrl = `${urlObj.origin}/v1beta`;
-                } catch (e) {
-                    console.warn('[Chat] 解析 apiUrl 失败，回退默认');
-                }
-            }
-
-            const modelName = 'gemini-1.5-flash';
-            const endpoint = `${geminiBaseUrl}/models/${modelName}:generateContent?key=${apiKey}`;
-
-            // Convert Chat History to Gemini Format
-            const contents = messages.map(msg => ({
-                role: msg.role === 'user' ? 'user' : 'model',
-                parts: [{ text: msg.content }]
-            }));
-
-            const requestBody = {
-                contents: contents,
-                generationConfig: {
-                    temperature: 0.7,
-                    maxOutputTokens: 1000
-                }
-            };
-
-            const llmRes = await fetch(endpoint, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${apiKey}`
-                },
-                body: JSON.stringify(requestBody)
-            });
-
-            const rawText = await llmRes.text();
-            let llmData;
-            try {
-                llmData = JSON.parse(rawText);
-            } catch (e) {
-                throw new Error(`LLM 返回无效数据: ${rawText.substring(0, 50)}`);
-            }
-
-            if (!llmRes.ok) {
-                console.error('[Chat] LLM 错误:', llmData);
-                throw new Error(llmData.error?.message || 'Chat 请求失败');
-            }
-
-            const reply = llmData.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-            if (!reply) {
-                throw new Error('无效的 LLM 响应');
-            }
+            const reply = await callLLMChat({ messages, apiKey, apiUrl, model });
 
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ reply }));
             return;
-
         } catch (error) {
             console.error('[Chat] 请求处理失败:', error);
             res.writeHead(500, { 'Content-Type': 'application/json' });

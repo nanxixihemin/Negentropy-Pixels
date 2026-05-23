@@ -5,8 +5,7 @@ import '../App.css'
 function Assistant() {
     const navigate = useNavigate()
 
-    // 硅基流动 Key
-    const ALCHEMY_KEY = 'sk-bvcynloojyrncymqiepnyqsvgztvmexegkfpqkfjuwtlkfvj';
+
 
     const [messages, setMessages] = useState([])
     const [input, setInput] = useState('')
@@ -47,12 +46,18 @@ function Assistant() {
     const triggerAI = async (history) => {
         setLoading(true)
         try {
+            const savedApiUrl = localStorage.getItem('banana_home_api_url') || '';
+            const savedApiKey = localStorage.getItem('banana_home_api_key') || '';
+            const savedGptModel = localStorage.getItem('banana_home_gpt_model') || 'gpt-4o';
+
             const res = await fetch('/api/alchemy-chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     messages: history,
-                    apiKey: ALCHEMY_KEY
+                    apiKey: savedApiKey,
+                    apiUrl: savedApiUrl,
+                    model: savedGptModel
                 })
             })
             const data = await res.json()

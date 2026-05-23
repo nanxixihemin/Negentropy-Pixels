@@ -68,9 +68,9 @@ function Home() {
   // 模型设置 - 恢复为 Google API (用于生图)
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('banana_home_api_key') || '')
   const [apiUrl, setApiUrl] = useState(() => localStorage.getItem('banana_home_api_url') || 'https://generativelanguage.googleapis.com')
+  const [gptModel, setGptModel] = useState(() => localStorage.getItem('banana_home_gpt_model') || 'gpt-4o')
 
-  // 硅基流动 Key (专门用于炼金)
-  const ALCHEMY_KEY = 'sk-bvcynloojyrncymqiepnyqsvgztvmexegkfpqkfjuwtlkfvj';
+
 
   // Model State
   const [selectedModelId, setSelectedModelId] = useState(() => localStorage.getItem('banana_home_model_id') || 'gemini-3-pro-image-preview')
@@ -79,6 +79,7 @@ function Home() {
   // Persistence Effects
   useEffect(() => { localStorage.setItem('banana_home_api_key', apiKey) }, [apiKey])
   useEffect(() => { localStorage.setItem('banana_home_api_url', apiUrl) }, [apiUrl])
+  useEffect(() => { localStorage.setItem('banana_home_gpt_model', gptModel) }, [gptModel])
   useEffect(() => { localStorage.setItem('banana_home_model_id', selectedModelId) }, [selectedModelId])
   useEffect(() => { localStorage.setItem('banana_home_prompt', prompt) }, [prompt])
   useEffect(() => {
@@ -166,8 +167,9 @@ function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt: textToRefine,
-          apiKey: ALCHEMY_KEY, // 使用硅基流动 Key
-          apiUrl: 'https://api.siliconflow.cn/v1' // 使用硅基流动 URL
+          apiKey: apiKey,
+          apiUrl: apiUrl,
+          model: gptModel
         })
       })
 
@@ -237,7 +239,9 @@ function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: newHistory,
-          apiKey: ALCHEMY_KEY
+          apiKey: apiKey,
+          apiUrl: apiUrl,
+          model: gptModel
         })
       })
       const data = await res.json()
@@ -726,7 +730,7 @@ function Home() {
             <h3>⚙️ 代理与密钥配置</h3>
             <button className="close-mini-btn" onClick={() => setShowSettings(false)}>×</button>
           </div>
-          <p className="hint">配置您的 OpenAI 兼容代理地址与 Sk 密钥。此项设置将同时应用于图片生成与“炼金”加速。</p>
+          <p className="hint">配置您的 OpenAI 兼容代理地址与 Sk 密钥。此项设置将应用于图片生成、文本对话与“炼金”加速。</p>
           <div className="input-group">
             <label>代理地址 (API Endpoint)</label>
             <input
@@ -744,6 +748,15 @@ function Home() {
               onChange={(e) => setApiKey(e.target.value)}
               disabled={!apiUrl || apiUrl.includes('googleapis.com')}
               placeholder={(!apiUrl || apiUrl.includes('googleapis.com')) ? "无需填写 (服务器自动注入)" : "sk-..."}
+            />
+          </div>
+          <div className="input-group">
+            <label>GPT 模型 (GPT Model)</label>
+            <input
+              type="text"
+              value={gptModel}
+              onChange={(e) => setGptModel(e.target.value)}
+              placeholder="gpt-4o / deepseek-chat"
             />
           </div>
         </div>

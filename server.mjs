@@ -8,6 +8,7 @@ import 'dotenv/config';
 import { createGalleryRepository } from './server/repositories/galleryRepository.mjs';
 import { createImprintRepository } from './server/repositories/imprintRepository.mjs';
 import { createUserRepository } from './server/repositories/userRepository.mjs';
+import { createChatRepository } from './server/repositories/chatRepository.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -31,6 +32,11 @@ const imprintRepository = createImprintRepository({
 const userRepository = createUserRepository({
     dataDir: DATA_DIR,
     dbPath: DATABASE_PATH
+});
+const chatRepository = createChatRepository({
+    dataDir: DATA_DIR,
+    dbPath: DATABASE_PATH,
+    maxSessions: 50
 });
 
 const MIME_TYPES = {
@@ -74,6 +80,8 @@ function publicGalleryItem(item) {
         author: item.author,
         deviceId: item.deviceId,
         caption: item.caption,
+        isFeatured: item.isFeatured,
+        featuredAt: item.featuredAt,
         timestamp: item.timestamp
     };
 }
@@ -896,6 +904,101 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
+    // GET /api/chat-sessions - 获取历史对话列表
+    if (req.url.startsWith('/api/chat-sessions') && req.method === 'GET') {
+        try {
+            const urlObj = new URL(req.url, `http://${req.headers.host}`);
+            const deviceId = urlObj.searchParams.get('deviceId');
+            const currentUser = getCurrentUser(req);
+            if (!deviceId && !currentUser) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: '缺少 deviceId' }));
+                return;
+            }
+            const list = chatRepository.list(currentUser ? { userId: currentUser.id } : { deviceId });
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(list));
+        } catch (err) {
+            console.error('[Chat GET] 错误:', err);
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err.message }));
+        }
+        return;
+    }
+
+    // POST /api/chat-sessions - 保存/更新历史对话
+    if (req.url === '/api/chat-sessions' && req.method === 'POST') {
+        try {
+            const chunks = [];
+            for await (const chunk of req) {
+                chunks.push(chunk);
+            }
+            const body = JSON.parse(Buffer.concat(chunks).toString());
+            const { id, title, messages, deviceId, timestamp } = body;
+            const currentUser = getCurrentUser(req);
+
+            if (!id || (!deviceId && !currentUser)) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: '缺少必要参数 (id, deviceId)' }));
+                return;
+            }
+
+            const item = chatRepository.save({
+                id,
+                title: title || '新对话',
+                messages: messages || [],
+                deviceId: deviceId || null,
+                userId: currentUser?.id || null,
+                timestamp
+            });
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, item }));
+        } catch (err) {
+            console.error('[Chat POST] 错误:', err);
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err.message }));
+        }
+        return;
+    }
+
+    // DELETE /api/chat-sessions/:id - 删除特定历史对话
+    const deleteChatMatch = req.url.match(/^\/api\/chat-sessions\/([a-zA-Z0-9_-]+)$/);
+    if (deleteChatMatch && req.method === 'DELETE') {
+        try {
+            const idToDelete = deleteChatMatch[1];
+            const chunks = [];
+            for await (const chunk of req) {
+                chunks.push(chunk);
+            }
+            const body = JSON.parse(Buffer.concat(chunks).toString());
+            const { deviceId } = body;
+            const currentUser = getCurrentUser(req);
+
+            if (!deviceId && !currentUser) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: '缺少 deviceId' }));
+                return;
+            }
+
+            const success = chatRepository.deleteById(
+                idToDelete,
+                currentUser ? { userId: currentUser.id } : { deviceId }
+            );
+            if (success) {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true }));
+            } else {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: '对话不存在或无权删除' }));
+            }
+        } catch (err) {
+            console.error('[Chat DELETE] 错误:', err);
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err.message }));
+        }
+        return;
+    }
+
     // 静态服务 - 共享图片访问
     if (req.url === '/api/admin/images' && req.method === 'GET') {
         const currentUser = getCurrentUser(req);
@@ -908,6 +1011,54 @@ const server = http.createServer(async (req, res) => {
             gallery: galleryRepository.listAllForAdmin(),
             imprints: imprintRepository.listAllForAdmin()
         });
+        return;
+    }
+
+    const adminGalleryDeleteMatch = req.url.match(/^\/api\/admin\/gallery\/([a-zA-Z0-9_-]+)$/);
+    if (adminGalleryDeleteMatch && req.method === 'DELETE') {
+        const currentUser = getCurrentUser(req);
+        if (!currentUser || currentUser.role !== 'admin') {
+            sendJson(res, 403, { error: '需要管理员权限' });
+            return;
+        }
+
+        const idToDelete = adminGalleryDeleteMatch[1];
+        const item = galleryRepository.findById(idToDelete);
+        if (!item) {
+            sendJson(res, 404, { error: '图片不存在' });
+            return;
+        }
+
+        const filePath = path.join(GALLERY_DIR, item.filename);
+        if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+        }
+
+        galleryRepository.deleteById(idToDelete);
+        sendJson(res, 200, { success: true });
+        return;
+    }
+
+    const adminGalleryFeaturedMatch = req.url.match(/^\/api\/admin\/gallery\/([a-zA-Z0-9_-]+)\/featured$/);
+    if (adminGalleryFeaturedMatch && req.method === 'POST') {
+        const currentUser = getCurrentUser(req);
+        if (!currentUser || currentUser.role !== 'admin') {
+            sendJson(res, 403, { error: '需要管理员权限' });
+            return;
+        }
+
+        try {
+            const body = await readJsonBody(req);
+            const item = galleryRepository.setFeatured(adminGalleryFeaturedMatch[1], Boolean(body.featured));
+            if (!item) {
+                sendJson(res, 404, { error: '图片不存在' });
+                return;
+            }
+
+            sendJson(res, 200, { success: true, item });
+        } catch (err) {
+            sendJson(res, 400, { error: err.message });
+        }
         return;
     }
 

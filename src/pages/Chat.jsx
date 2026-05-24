@@ -12,6 +12,42 @@ const PRESET_MODELS = [
 function Chat() {
   const navigate = useNavigate()
 
+  const AUTH_STORAGE_KEY = 'negentropy_auth_token'
+  const deviceId = localStorage.getItem('banana_device_id') || 'device_guest'
+  const authToken = localStorage.getItem(AUTH_STORAGE_KEY) || ''
+  const authHeaders = () => authToken ? { Authorization: `Bearer ${authToken}` } : {}
+
+  const syncSessionToServer = async (session) => {
+    if (!session) return
+    try {
+      await fetch('/api/chat-sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({
+          id: String(session.id),
+          title: session.title,
+          messages: session.messages,
+          deviceId,
+          timestamp: session.timestamp
+        })
+      })
+    } catch (e) {
+      console.warn('Failed to sync chat session to server', e)
+    }
+  }
+
+  const deleteSessionFromServer = async (sessionId) => {
+    try {
+      await fetch(`/api/chat-sessions/${sessionId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ deviceId })
+      })
+    } catch (e) {
+      console.warn('Failed to delete chat session from server', e)
+    }
+  }
+
   // --- Settings State ---
   const [apiKey, setApiKey] = useState('')
   const [apiUrl, setApiUrl] = useState('https://generativelanguage.googleapis.com')
@@ -45,18 +81,37 @@ function Chat() {
           setModel(parsed.model || 'gpt5-4')
         }
       }
+    } catch (e) {}
 
-      // 2. Sessions (with Migration)
-      const savedSessions = localStorage.getItem('banana_chat_sessions')
-      if (savedSessions) {
-        const parsedSessions = JSON.parse(savedSessions)
-        setSessions(parsedSessions)
-        if (parsedSessions.length > 0) {
-          setCurrentSessionId(parsedSessions[0].id)
-        } else {
-          createNewSession()
+    // 2. Load Sessions from Database
+    const loadSessions = async () => {
+      try {
+        const res = await fetch(`/api/chat-sessions?deviceId=${encodeURIComponent(deviceId)}`, {
+          headers: authHeaders()
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || '加载对话失败')
+
+        if (Array.isArray(data) && data.length > 0) {
+          setSessions(data)
+          saveSessionsToStorage(data)
+          setCurrentSessionId(data[0].id)
+          return
         }
-      } else {
+
+        // Fallback: If database is empty, check localStorage
+        const savedSessions = localStorage.getItem('banana_chat_sessions')
+        if (savedSessions) {
+          const parsedSessions = JSON.parse(savedSessions)
+          setSessions(parsedSessions)
+          if (parsedSessions.length > 0) {
+            setCurrentSessionId(parsedSessions[0].id)
+            // Sync local storage sessions to database
+            await Promise.all(parsedSessions.map(s => syncSessionToServer(s)))
+            return
+          }
+        }
+
         // Migration: Check for legacy single history
         const legacyHistory = localStorage.getItem('banana_chat_history')
         if (legacyHistory) {
@@ -70,14 +125,29 @@ function Chat() {
           setSessions([newSession])
           setCurrentSessionId(newSession.id)
           saveSessionsToStorage([newSession])
-        } else {
-          // No history at all, start fresh
-          createNewSession()
+          await syncSessionToServer(newSession)
+          return
         }
+
+        // If no history at all, start fresh
+        createNewSession()
+      } catch (e) {
+        console.warn("Failed to load chat data from server, falling back to local storage", e)
+        // Fallback to local storage
+        const savedSessions = localStorage.getItem('banana_chat_sessions')
+        if (savedSessions) {
+          const parsedSessions = JSON.parse(savedSessions)
+          setSessions(parsedSessions)
+          if (parsedSessions.length > 0) {
+            setCurrentSessionId(parsedSessions[0].id)
+            return
+          }
+        }
+        createNewSession()
       }
-    } catch (e) {
-      console.warn("Failed to load chat data", e)
     }
+
+    loadSessions()
   }, [])
 
   // Auto-scroll
@@ -111,6 +181,7 @@ function Chat() {
     setSessions(updated)
     setCurrentSessionId(newSession.id)
     saveSessionsToStorage(updated)
+    syncSessionToServer(newSession)
     if (window.innerWidth <= 768) setIsSidebarOpen(false) // Mobile UX
   }
 
@@ -122,6 +193,7 @@ function Chat() {
     const updated = sessions.filter(s => s.id !== id)
     setSessions(updated)
     saveSessionsToStorage(updated)
+    deleteSessionFromServer(id)
 
     if (currentSessionId === id) {
       if (updated.length > 0) {
@@ -168,6 +240,7 @@ function Chat() {
     setSessions(updatedSessions)
     setCurrentSessionId(currentSessionId)
     saveSessionsToStorage(updatedSessions)
+    syncSessionToServer(updatedSession)
 
     setInput('')
     setIsLoading(true)
@@ -195,6 +268,7 @@ function Chat() {
 
       setSessions(finalSessions)
       saveSessionsToStorage(finalSessions)
+      syncSessionToServer(finalSession)
 
     } catch (err) {
       let friendlyError = err.message

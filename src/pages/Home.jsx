@@ -1549,6 +1549,7 @@ function Home() {
                       alt={item.prompt}
                       className="plaza-thumbnail"
                     />
+                    {item.isFeatured && <div className="plaza-featured-badge">波源</div>}
                     {item.deviceId === deviceId && (
                       <button
                         className="plaza-delete-btn"

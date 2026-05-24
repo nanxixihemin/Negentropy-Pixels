@@ -12,6 +12,8 @@ function normalizeGalleryItem(item) {
         username: item.username || null,
         nickname: item.nickname || null,
         caption: item.caption || null,
+        isFeatured: Boolean(item.is_featured ?? item.isFeatured ?? false),
+        featuredAt: item.featured_at ?? item.featuredAt ?? null,
         timestamp: Number(item.timestamp || Date.now())
     };
 }
@@ -39,15 +41,21 @@ export function createGalleryRepository({ dataDir, dbPath, legacyMetaPath, maxIt
             device_id TEXT,
             user_id TEXT,
             caption TEXT,
+            is_featured INTEGER NOT NULL DEFAULT 0,
+            featured_at INTEGER,
             timestamp INTEGER NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_gallery_items_timestamp
             ON gallery_items (timestamp DESC);
     `);
     ensureColumn(db, 'gallery_items', 'user_id', 'TEXT');
+    ensureColumn(db, 'gallery_items', 'is_featured', 'INTEGER NOT NULL DEFAULT 0');
+    ensureColumn(db, 'gallery_items', 'featured_at', 'INTEGER');
     db.exec(`
         CREATE INDEX IF NOT EXISTS idx_gallery_items_user_timestamp
             ON gallery_items (user_id, timestamp DESC);
+        CREATE INDEX IF NOT EXISTS idx_gallery_items_featured_timestamp
+            ON gallery_items (is_featured DESC, featured_at DESC, timestamp DESC);
     `);
 
     const insertItem = db.prepare(`
@@ -115,9 +123,11 @@ export function createGalleryRepository({ dataDir, dbPath, legacyMetaPath, maxIt
                 device_id AS deviceId,
                 user_id AS userId,
                 caption,
+                is_featured AS isFeatured,
+                featured_at AS featuredAt,
                 timestamp
             FROM gallery_items
-            ORDER BY timestamp DESC, id DESC
+            ORDER BY is_featured DESC, featured_at DESC, timestamp DESC, id DESC
             LIMIT ?
         `).all(maxItems).map(normalizeGalleryItem);
     }
@@ -145,6 +155,8 @@ export function createGalleryRepository({ dataDir, dbPath, legacyMetaPath, maxIt
                     device_id AS deviceId,
                     user_id AS userId,
                     caption,
+                    is_featured AS isFeatured,
+                    featured_at AS featuredAt,
                     timestamp
                 FROM gallery_items
                 WHERE user_id IS ?
@@ -163,12 +175,14 @@ export function createGalleryRepository({ dataDir, dbPath, legacyMetaPath, maxIt
                     gallery_items.device_id AS deviceId,
                     gallery_items.user_id AS userId,
                     gallery_items.caption,
+                    gallery_items.is_featured AS isFeatured,
+                    gallery_items.featured_at AS featuredAt,
                     gallery_items.timestamp,
                     users.username,
                     users.nickname
                 FROM gallery_items
                 LEFT JOIN users ON users.id = gallery_items.user_id
-                ORDER BY gallery_items.timestamp DESC, gallery_items.id DESC
+                ORDER BY gallery_items.is_featured DESC, gallery_items.featured_at DESC, gallery_items.timestamp DESC, gallery_items.id DESC
                 LIMIT ?
             `).all(maxItems).map(normalizeGalleryItem);
         },
@@ -200,6 +214,8 @@ export function createGalleryRepository({ dataDir, dbPath, legacyMetaPath, maxIt
                     device_id AS deviceId,
                     user_id AS userId,
                     caption,
+                    is_featured AS isFeatured,
+                    featured_at AS featuredAt,
                     timestamp
                 FROM gallery_items
                 WHERE id = ?
@@ -214,6 +230,18 @@ export function createGalleryRepository({ dataDir, dbPath, legacyMetaPath, maxIt
                 syncLegacyJson();
             }
             return result.changes > 0;
+        },
+
+        setFeatured(id, featured) {
+            const result = db.prepare(`
+                UPDATE gallery_items
+                SET is_featured = ?, featured_at = ?
+                WHERE id = ?
+            `).run(featured ? 1 : 0, featured ? Date.now() : null, String(id));
+            if (result.changes > 0) {
+                syncLegacyJson();
+            }
+            return this.findById(id);
         }
     };
 }

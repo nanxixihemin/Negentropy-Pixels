@@ -11,6 +11,7 @@ function Admin() {
   const [imprints, setImprints] = useState([])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
+  const [detail, setDetail] = useState(null)
 
   const loadImages = useCallback(async () => {
     if (!token) {
@@ -78,6 +79,12 @@ function Admin() {
   }
 
   const renderOwner = (item) => item.nickname || item.username || item.deviceId || '未归属'
+  const showPromptDetail = (item) => {
+    setDetail({
+      title: `${renderOwner(item)} 的提示词`,
+      text: item.prompt
+    })
+  }
 
   return (
     <div className="app-container">
@@ -103,14 +110,19 @@ function Admin() {
                     {item.isFeatured && <div className="plaza-featured-badge">波源</div>}
                     <div className="plaza-info">
                       <div className="plaza-author">{renderOwner(item)}</div>
-                      {item.prompt && <div className="plaza-prompt">{item.prompt}</div>}
+                      {item.prompt && (
+                        <button className="prompt-preview-btn" onClick={() => showPromptDetail(item)} type="button">
+                          <span className="badge-tag">提示词</span>
+                          <span>{item.prompt}</span>
+                        </button>
+                      )}
                       {item.caption && <div className="plaza-caption">{item.caption}</div>}
                     </div>
                     <div className="admin-gallery-actions">
-                      <button className="history-action-btn share" onClick={() => toggleFeatured(item)}>
+                      <button className="history-action-btn share" onClick={() => toggleFeatured(item)} type="button">
                         {item.isFeatured ? '取消波源' : '设为波源'}
                       </button>
-                      <button className="history-action-btn delete" onClick={() => deleteGalleryItem(item)}>
+                      <button className="history-action-btn delete" onClick={() => deleteGalleryItem(item)} type="button">
                         删除
                       </button>
                     </div>
@@ -127,7 +139,12 @@ function Admin() {
                     <img src={item.url} alt={item.prompt} className="history-thumbnail" />
                     <div className="plaza-info">
                       <div className="plaza-author">{renderOwner(item)}</div>
-                      {item.prompt && <div className="plaza-prompt">{item.prompt}</div>}
+                      {item.prompt && (
+                        <button className="prompt-preview-btn" onClick={() => showPromptDetail(item)} type="button">
+                          <span className="badge-tag">提示词</span>
+                          <span>{item.prompt}</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -136,6 +153,18 @@ function Admin() {
           </>
         )}
       </main>
+
+      {detail && (
+        <div className="modal-overlay" onClick={() => setDetail(null)}>
+          <div className="modal-content prompt-detail-modal" onClick={(e) => e.stopPropagation()}>
+            <h3>{detail.title}</h3>
+            <div className="prompt-detail-text">{detail.text}</div>
+            <button className="modal-btn confirm" onClick={() => setDetail(null)} type="button">
+              关闭
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -412,8 +412,12 @@ function Home() {
   // Plaza (共享画廊) 状态
   const [activeTab, setActiveTab] = useState('create') // 'create' | 'plaza'
   const [publicGallery, setPublicGallery] = useState([])
+  const [plazaFilter, setPlazaFilter] = useState('all')
   const [loadingGallery, setLoadingGallery] = useState(false)
   const [sharingId, setSharingId] = useState(null)
+  const visiblePublicGallery = plazaFilter === 'featured'
+    ? publicGallery.filter(item => item.isFeatured)
+    : publicGallery
 
   // 昵称状态
   const [nickname, setNickname] = useState('')
@@ -1526,9 +1530,7 @@ function Home() {
                       alt={item.prompt}
                       className="history-thumbnail"
                       onClick={() => {
-                        setImageUrl(item.url)
-                        setPrompt(item.prompt)
-                        setActiveTab('create') // Jump back to create
+                        reworkHistoryImage(item)
                         window.scrollTo({ top: 0, behavior: 'smooth' })
                       }}
                     />
@@ -1591,6 +1593,22 @@ function Home() {
             <h3>共振</h3>
             <p className="plaza-slogan">每一份构思，必有回响</p>
             <p className="plaza-hint">这里展示大家分享的作品，快去创作并分享你的作品吧！</p>
+            <div className="plaza-filter" role="group" aria-label="共振筛选">
+              <button
+                className={`plaza-filter-btn ${plazaFilter === 'all' ? 'active' : ''}`}
+                onClick={() => setPlazaFilter('all')}
+                type="button"
+              >
+                全部
+              </button>
+              <button
+                className={`plaza-filter-btn ${plazaFilter === 'featured' ? 'active' : ''}`}
+                onClick={() => setPlazaFilter('featured')}
+                type="button"
+              >
+                波源
+              </button>
+            </div>
 
             {loadingGallery ? (
               <div className="loading-text">加载中...</div>
@@ -1598,9 +1616,13 @@ function Home() {
               <div className="empty-plaza">
                 <p>还没有作品，成为第一个分享的人吧！</p>
               </div>
+            ) : visiblePublicGallery.length === 0 ? (
+              <div className="empty-plaza">
+                <p>还没有波源作品</p>
+              </div>
             ) : (
               <div className="plaza-grid">
-                {publicGallery.map((item) => (
+                {visiblePublicGallery.map((item) => (
                   <div key={item.id} className="plaza-item">
                     <img
                       src={`/uploads/${item.filename}`}

@@ -3,14 +3,10 @@ import { useNavigate } from 'react-router-dom'
 import '../App.css'
 
 const PRESET_MODELS = [
-  'gemini-2.0-flash',
-  'gemini-2.0-flash-lite',
-  'gemini-2.0-flash-001',
-  'gemini-2.5-flash',
-  'gemini-1.5-flash',
-  'gpt-4o',
-  'gpt-4o-mini',
-  'deepseek-chat'
+  'gpt5-4',
+  'gpt5-5',
+  'Qwen3_6',
+  'deepseek-ai/DeepSeek-V4-Flash'
 ];
 
 function Chat() {
@@ -19,7 +15,7 @@ function Chat() {
   // --- Settings State ---
   const [apiKey, setApiKey] = useState('')
   const [apiUrl, setApiUrl] = useState('https://generativelanguage.googleapis.com')
-  const [model, setModel] = useState('gemini-2.0-flash')
+  const [model, setModel] = useState('gpt5-4')
   const [showSettings, setShowSettings] = useState(false)
 
   // --- Multi-Session State ---
@@ -41,11 +37,11 @@ function Chat() {
       if (savedSettings) {
         const parsed = JSON.parse(savedSettings)
         setApiKey(parsed.apiKey || 'AIzaSyDmZYG9_Qoego684v-mIyCXCjEHllBiUuY')
-        if (parsed.model && parsed.model.includes('exp')) {
-          // Auto-fix legacy experimental IDs
-          setModel('gemini-2.0-flash')
+        if (parsed.model && (parsed.model.includes('gemini') || parsed.model.includes('exp'))) {
+          // Auto-fix legacy experimental/Gemini IDs
+          setModel('gpt5-4')
         } else {
-          setModel(parsed.model || 'gemini-2.0-flash')
+          setModel(parsed.model || 'gpt5-4')
         }
       }
 
@@ -368,18 +364,10 @@ function Chat() {
                 }}
                 style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid #ddd' }}
               >
-                <optgroup label="Gemini 模型">
-                  <option value="gemini-2.0-flash">Gemini 2.0 Flash (推荐)</option>
-                  <option value="gemini-2.0-flash-lite">Gemini 2.0 Flash Lite (极速)</option>
-                  <option value="gemini-2.0-flash-001">Gemini 2.0 Flash-001 (稳定)</option>
-                  <option value="gemini-2.5-flash">Gemini 2.5 Flash (最新)</option>
-                  <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
-                </optgroup>
-                <optgroup label="GPT (OpenAI / DeepSeek 等)">
-                  <option value="gpt-4o">GPT-4o (OpenAI)</option>
-                  <option value="gpt-4o-mini">GPT-4o-mini (OpenAI)</option>
-                  <option value="deepseek-chat">DeepSeek Chat</option>
-                </optgroup>
+                <option value="gpt5-4">gpt5-4</option>
+                <option value="gpt5-5">gpt5-5</option>
+                <option value="Qwen3_6">Qwen3_6</option>
+                <option value="deepseek-ai/DeepSeek-V4-Flash">deepseek-ai/DeepSeek-V4-Flash</option>
                 <option value="custom">自定义...</option>
               </select>
               {!PRESET_MODELS.includes(model) && (
@@ -406,7 +394,33 @@ function Chat() {
 
             <div className="input-group">
               <label>API Base URL</label>
-              <input type="text" value={apiUrl} onChange={e => setApiUrl(e.target.value)} />
+              <select
+                value={['https://store.hachimi-ai.com', 'https://api-inference.modelscope.cn/v1', 'http://10.10.0.35/v1', 'https://generativelanguage.googleapis.com'].includes(apiUrl) ? apiUrl : 'custom'}
+                onChange={e => {
+                  const val = e.target.value;
+                  if (val === 'custom') {
+                    setApiUrl('custom-url');
+                  } else {
+                    setApiUrl(val);
+                  }
+                }}
+                style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid #ddd' }}
+              >
+                <option value="https://store.hachimi-ai.com">https://store.hachimi-ai.com</option>
+                <option value="https://api-inference.modelscope.cn/v1">https://api-inference.modelscope.cn/v1</option>
+                <option value="http://10.10.0.35/v1">http://10.10.0.35/v1</option>
+                <option value="https://generativelanguage.googleapis.com">https://generativelanguage.googleapis.com (默认)</option>
+                <option value="custom">自定义...</option>
+              </select>
+              {!['https://store.hachimi-ai.com', 'https://api-inference.modelscope.cn/v1', 'http://10.10.0.35/v1', 'https://generativelanguage.googleapis.com'].includes(apiUrl) && (
+                <input
+                  type="text"
+                  value={apiUrl === 'custom-url' ? '' : apiUrl}
+                  onChange={(e) => setApiUrl(e.target.value)}
+                  placeholder="输入自定义 API 地址"
+                  style={{ marginTop: '5px' }}
+                />
+              )}
             </div>
 
             <button className="generate-btn" style={{ marginTop: '10px', padding: '8px' }} onClick={saveSettings}>保存配置</button>

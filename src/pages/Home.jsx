@@ -42,11 +42,9 @@ const DEFAULT_TEMPLATES = [
 ]
 
 // 模型列表
-// 模型列表
 const AVAILABLE_MODELS = [
   { id: 'gemini-3-pro-image-preview', label: 'Gemini 3 Pro Image (Preview, 推荐)' },
-  { id: 'gemini-2.5-flash-image', label: 'Gemini 2.5 Flash Image (Fast)' },
-  { id: 'gemini-2.0-flash-exp-image-generation', label: 'Gemini 2.0 Flash Image (Exp)' },
+  { id: 'gpt-image2', label: 'gpt-image2' },
   { id: 'custom', label: '自定义模型...' }
 ]
 
@@ -730,12 +728,34 @@ function Home() {
           <p className="hint">配置您的 OpenAI 兼容代理地址与 Sk 密钥。此项设置将应用于图片生成、文本对话与“炼金”加速。</p>
           <div className="input-group">
             <label>代理地址 (API Endpoint)</label>
-            <input
-              type="text"
-              value={apiUrl}
-              onChange={(e) => setApiUrl(e.target.value)}
-              placeholder="/v1/chat/completions"
-            />
+            <select
+              className="model-select"
+              value={['https://store.hachimi-ai.com', 'https://api-inference.modelscope.cn/v1', 'http://10.10.0.35/v1', 'https://generativelanguage.googleapis.com'].includes(apiUrl) ? apiUrl : 'custom'}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val === 'custom') {
+                  setApiUrl('custom-url');
+                } else {
+                  setApiUrl(val);
+                }
+              }}
+              style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', background: 'var(--card-bg)', color: 'var(--text-main)' }}
+            >
+              <option value="https://store.hachimi-ai.com">https://store.hachimi-ai.com</option>
+              <option value="https://api-inference.modelscope.cn/v1">https://api-inference.modelscope.cn/v1</option>
+              <option value="http://10.10.0.35/v1">http://10.10.0.35/v1</option>
+              <option value="https://generativelanguage.googleapis.com">https://generativelanguage.googleapis.com (默认)</option>
+              <option value="custom">自定义...</option>
+            </select>
+            {!['https://store.hachimi-ai.com', 'https://api-inference.modelscope.cn/v1', 'http://10.10.0.35/v1', 'https://generativelanguage.googleapis.com'].includes(apiUrl) && (
+              <input
+                type="text"
+                value={apiUrl === 'custom-url' ? '' : apiUrl}
+                onChange={(e) => setApiUrl(e.target.value)}
+                placeholder="输入自定义 API 地址"
+                style={{ marginTop: '5px' }}
+              />
+            )}
           </div>
           <div className="input-group">
             <label>授权密钥 (API Key) {(!apiUrl || apiUrl.includes('googleapis.com')) && <span style={{ fontSize: '0.8em', color: 'rgba(255,255,255,0.5)' }}>(由服务器托管)</span>}</label>

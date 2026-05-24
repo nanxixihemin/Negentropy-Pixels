@@ -181,14 +181,14 @@ async function callLLMChat({ messages, apiKey, apiUrl, model }) {
                 const parsed = JSON.parse(rawText);
                 errDetail = parsed.error?.message || parsed.error || rawText;
             } catch (e) {}
-            throw new Error(`GPT API Error (${response.status}): ${errDetail}`);
+            throw new Error(`AI 接口错误 (${response.status}): ${errDetail}`);
         }
 
         let data;
         try {
             data = JSON.parse(rawText);
         } catch (e) {
-            throw new Error(`GPT API 返回非 JSON 格式数据: ${rawText.substring(0, 100)}`);
+            throw new Error(`AI 接口返回非 JSON 格式数据: ${rawText.substring(0, 100)}`);
         }
 
         const reply = data.choices?.[0]?.message?.content?.trim();
@@ -351,7 +351,7 @@ async function callLLMImage({ prompt, apiKey, apiUrl, model, aspectRatio, qualit
                     const parsed = JSON.parse(rawText);
                     errDetail = parsed.error?.message || parsed.error || rawText;
                 } catch (e) {}
-                throw new Error(`GPT Image API Error (${response.status}): ${errDetail}`);
+                throw new Error(`AI 生图接口错误 (${response.status}): ${errDetail}`);
             }
         }
 
@@ -359,12 +359,12 @@ async function callLLMImage({ prompt, apiKey, apiUrl, model, aspectRatio, qualit
         try {
             data = JSON.parse(rawText);
         } catch (e) {
-            throw new Error(`GPT Image API 返回非 JSON 格式数据: ${rawText.substring(0, 100)}`);
+            throw new Error(`AI 生图接口返回非 JSON 格式数据: ${rawText.substring(0, 100)}`);
         }
 
         const imgData = data.data?.[0];
         if (!imgData) {
-            throw new Error('未在 GPT Image 响应中找到图片数据');
+            throw new Error('未在生图接口响应中找到图片数据');
         }
 
         if (imgData.b64_json) {
@@ -385,7 +385,7 @@ async function callLLMImage({ prompt, apiKey, apiUrl, model, aspectRatio, qualit
             return imgData.url;
         }
 
-        throw new Error('GPT Image 响应中缺少 b64_json 或 url');
+        throw new Error('生图接口响应中缺少图片数据');
     }
 }
 

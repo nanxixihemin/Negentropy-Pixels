@@ -904,14 +904,13 @@ function Home() {
                     )}
                   </div>
 
-                  <div className="input-group">
-                    <label>授权密钥 (API Key) {(!apiUrl || apiUrl.includes('googleapis.com')) && <span style={{ fontSize: '0.8em', color: 'rgba(0,0,0,0.4)' }}>(由服务器托管)</span>}</label>
+                   <div className="input-group">
+                    <label>授权密钥 (API Key) <span style={{ fontSize: '0.8em', color: 'rgba(0,0,0,0.4)' }}>(留空将使用服务器托管)</span></label>
                     <input
                       type="password"
                       value={apiKey}
                       onChange={(e) => setApiKey(e.target.value)}
-                      disabled={!apiUrl || apiUrl.includes('googleapis.com')}
-                      placeholder={(!apiUrl || apiUrl.includes('googleapis.com')) ? "无需填写 (服务器自动注入)" : "sk-..."}
+                      placeholder="请输入 API Key（可选）"
                     />
                   </div>
 
@@ -980,7 +979,7 @@ function Home() {
                   </div>
 
                   <div className="input-group">
-                    <label>授权密钥 (API Key) {(!chatSettings.apiUrl || chatSettings.apiUrl.includes('googleapis.com')) && <span style={{ fontSize: '0.8em', color: 'rgba(0,0,0,0.4)' }}>(由服务器托管)</span>}</label>
+                    <label>授权密钥 (API Key) <span style={{ fontSize: '0.8em', color: 'rgba(0,0,0,0.4)' }}>(留空将使用服务器托管)</span></label>
                     <input
                       type="password"
                       value={chatSettings.apiKey}
@@ -988,8 +987,7 @@ function Home() {
                         const val = e.target.value;
                         setChatSettings(prev => ({ ...prev, apiKey: val }));
                       }}
-                      disabled={!chatSettings.apiUrl || chatSettings.apiUrl.includes('googleapis.com')}
-                      placeholder={(!chatSettings.apiUrl || chatSettings.apiUrl.includes('googleapis.com')) ? "无需填写 (服务器自动注入)" : "sk-..."}
+                      placeholder="请输入 API Key（可选）"
                     />
                   </div>
 

@@ -91,6 +91,26 @@ function Home() {
   const [customModelName, setCustomModelName] = useState(() => localStorage.getItem('banana_home_custom_model_name') || '')
   const [authToken, setAuthToken] = useState(() => localStorage.getItem(AUTH_STORAGE_KEY) || '')
   const [currentUser, setCurrentUser] = useState(null)
+
+  // “勾勒”对话设置 - 从 banana_chat_api_settings 初始化
+  const [chatSettings, setChatSettings] = useState(() => {
+    try {
+      const saved = localStorage.getItem('banana_chat_api_settings')
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        return {
+          apiKey: parsed.apiKey || '',
+          apiUrl: parsed.apiUrl || 'https://generativelanguage.googleapis.com',
+          model: parsed.model || 'gpt5-4'
+        }
+      }
+    } catch (e) {}
+    return {
+      apiKey: '',
+      apiUrl: 'https://generativelanguage.googleapis.com',
+      model: 'gpt5-4'
+    }
+  })
   const [authMode, setAuthMode] = useState('login')
   const [authForm, setAuthForm] = useState({ username: '', password: '', nickname: '', securityQuestion: '', securityAnswer: '' })
   const [authError, setAuthError] = useState('')
@@ -113,6 +133,10 @@ function Home() {
     if (authToken) localStorage.setItem(AUTH_STORAGE_KEY, authToken)
     else localStorage.removeItem(AUTH_STORAGE_KEY)
   }, [authToken])
+
+  useEffect(() => {
+    localStorage.setItem('banana_chat_api_settings', JSON.stringify(chatSettings))
+  }, [chatSettings])
 
   // Save History (Limit to 20 items to avoid quota issues with base64)
   useEffect(() => {
@@ -181,28 +205,14 @@ function Home() {
 
     setIsRefining(true)
     try {
-      // 炼金接口与“对话（Chat）”配置保持一致
-      let chatApiKey = ''
-      let chatApiUrl = 'https://generativelanguage.googleapis.com'
-      let chatModel = 'gpt5-4'
-      try {
-        const savedChatSettings = localStorage.getItem('banana_chat_api_settings')
-        if (savedChatSettings) {
-          const parsed = JSON.parse(savedChatSettings)
-          chatApiKey = parsed.apiKey || ''
-          chatApiUrl = parsed.apiUrl || 'https://generativelanguage.googleapis.com'
-          chatModel = parsed.model || 'gpt5-4'
-        }
-      } catch (e) {}
-
       const res = await fetch('/api/refine-prompt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt: textToRefine,
-          apiKey: chatApiKey,
-          apiUrl: chatApiUrl,
-          model: chatModel
+          apiKey: chatSettings.apiKey,
+          apiUrl: chatSettings.apiUrl,
+          model: chatSettings.model
         })
       })
 
@@ -805,73 +815,165 @@ function Home() {
           </div>
           <div className="settings-columns">
             {/* Column 1: API settings */}
-            <div className="settings-col">
-              <div className="settings-auth-title">🛠️ API 与模型配置</div>
-              
-              <div className="input-group">
-                <label>代理地址 (API Endpoint)</label>
-                <select
-                  className="model-select"
-                  value={['https://store.hachimi-ai.com', 'https://api-inference.modelscope.cn/v1', 'http://10.10.0.35/v1', 'https://generativelanguage.googleapis.com'].includes(apiUrl) ? apiUrl : 'custom'}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    if (val === 'custom') {
-                      setApiUrl('custom-url');
-                    } else {
-                      setApiUrl(val);
-                    }
-                  }}
-                  style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', background: 'var(--card-bg)', color: 'var(--text-main)' }}
-                >
-                  <option value="https://store.hachimi-ai.com">https://store.hachimi-ai.com</option>
-                  <option value="https://api-inference.modelscope.cn/v1">https://api-inference.modelscope.cn/v1</option>
-                  <option value="http://10.10.0.35/v1">http://10.10.0.35/v1</option>
-                  <option value="https://generativelanguage.googleapis.com">https://generativelanguage.googleapis.com (默认)</option>
-                  <option value="custom">自定义...</option>
-                </select>
-                {!['https://store.hachimi-ai.com', 'https://api-inference.modelscope.cn/v1', 'http://10.10.0.35/v1', 'https://generativelanguage.googleapis.com'].includes(apiUrl) && (
-                  <input
-                    type="text"
-                    value={apiUrl === 'custom-url' ? '' : apiUrl}
-                    onChange={(e) => setApiUrl(e.target.value)}
-                    placeholder="输入自定义 API 地址"
-                    style={{ marginTop: '5px' }}
-                  />
-                )}
+            <div className="settings-col" style={{ gap: '15px' }}>
+              <div>
+                <div className="settings-auth-title" style={{ fontSize: '0.95rem', borderBottom: '1px solid rgba(0,0,0,0.05)', paddingBottom: '4px', marginBottom: '8px' }}>🎨 生图接口配置 (Image Generation)</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div className="input-group">
+                    <label>接入网址 (API Endpoint)</label>
+                    <select
+                      className="model-select"
+                      value={['https://store.hachimi-ai.com', 'https://api-inference.modelscope.cn/v1', 'http://10.10.0.35/v1', 'https://generativelanguage.googleapis.com'].includes(apiUrl) ? apiUrl : 'custom'}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === 'custom') {
+                          setApiUrl('custom-url');
+                        } else {
+                          setApiUrl(val);
+                        }
+                      }}
+                      style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'rgba(255,248,231,0.5)', color: 'var(--text-main)' }}
+                    >
+                      <option value="https://store.hachimi-ai.com">https://store.hachimi-ai.com</option>
+                      <option value="https://api-inference.modelscope.cn/v1">https://api-inference.modelscope.cn/v1</option>
+                      <option value="http://10.10.0.35/v1">http://10.10.0.35/v1</option>
+                      <option value="https://generativelanguage.googleapis.com">https://generativelanguage.googleapis.com (默认)</option>
+                      <option value="custom">自定义...</option>
+                    </select>
+                    {!['https://store.hachimi-ai.com', 'https://api-inference.modelscope.cn/v1', 'http://10.10.0.35/v1', 'https://generativelanguage.googleapis.com'].includes(apiUrl) && (
+                      <input
+                        type="text"
+                        value={apiUrl === 'custom-url' ? '' : apiUrl}
+                        onChange={(e) => setApiUrl(e.target.value)}
+                        placeholder="输入自定义 API 地址"
+                        style={{ marginTop: '5px' }}
+                      />
+                    )}
+                  </div>
+
+                  <div className="input-group">
+                    <label>授权密钥 (API Key) {(!apiUrl || apiUrl.includes('googleapis.com')) && <span style={{ fontSize: '0.8em', color: 'rgba(0,0,0,0.4)' }}>(由服务器托管)</span>}</label>
+                    <input
+                      type="password"
+                      value={apiKey}
+                      onChange={(e) => setApiKey(e.target.value)}
+                      disabled={!apiUrl || apiUrl.includes('googleapis.com')}
+                      placeholder={(!apiUrl || apiUrl.includes('googleapis.com')) ? "无需填写 (服务器自动注入)" : "sk-..."}
+                    />
+                  </div>
+
+                  <div className="input-group">
+                    <label>生图模型 (Image Model)</label>
+                    <select
+                      className="model-select"
+                      value={selectedModelId}
+                      onChange={(e) => setSelectedModelId(e.target.value)}
+                      style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'rgba(255,248,231,0.5)', color: 'var(--text-main)' }}
+                    >
+                      {AVAILABLE_MODELS.map(m => (
+                        <option key={m.id} value={m.id}>{m.label}</option>
+                      ))}
+                    </select>
+                    {selectedModelId === 'custom' && (
+                      <input
+                        type="text"
+                        value={customModelName}
+                        onChange={(e) => setCustomModelName(e.target.value)}
+                        placeholder="输入模型名称 (如 gemini-1.5-pro)"
+                        style={{ marginTop: '5px' }}
+                      />
+                    )}
+                  </div>
+                </div>
               </div>
 
-              <div className="input-group">
-                <label>授权密钥 (API Key) {(!apiUrl || apiUrl.includes('googleapis.com')) && <span style={{ fontSize: '0.8em', color: 'rgba(0,0,0,0.4)' }}>(由服务器托管)</span>}</label>
-                <input
-                  type="password"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  disabled={!apiUrl || apiUrl.includes('googleapis.com')}
-                  placeholder={(!apiUrl || apiUrl.includes('googleapis.com')) ? "无需填写 (服务器自动注入)" : "sk-..."}
-                />
-              </div>
+              <hr style={{ border: 'none', borderTop: '1px solid var(--border-color)', margin: '4px 0' }} />
 
-              <div className="input-group">
-                <label>生图模型 (Image Model)</label>
-                <select
-                  className="model-select"
-                  value={selectedModelId}
-                  onChange={(e) => setSelectedModelId(e.target.value)}
-                  style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', background: 'var(--card-bg)', color: 'var(--text-main)' }}
-                >
-                  {AVAILABLE_MODELS.map(m => (
-                    <option key={m.id} value={m.id}>{m.label}</option>
-                  ))}
-                </select>
-                {selectedModelId === 'custom' && (
-                  <input
-                    type="text"
-                    value={customModelName}
-                    onChange={(e) => setCustomModelName(e.target.value)}
-                    placeholder="输入模型名称 (如 gemini-1.5-pro)"
-                    style={{ marginTop: '5px' }}
-                  />
-                )}
+              <div>
+                <div className="settings-auth-title" style={{ fontSize: '0.95rem', borderBottom: '1px solid rgba(0,0,0,0.05)', paddingBottom: '4px', marginBottom: '8px' }}>💬 “勾勒”与炼金配置 (Chat & Alchemy)</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div className="input-group">
+                    <label>接入网址 (API Endpoint)</label>
+                    <select
+                      className="model-select"
+                      value={['https://store.hachimi-ai.com', 'https://api-inference.modelscope.cn/v1', 'http://10.10.0.35/v1', 'https://generativelanguage.googleapis.com'].includes(chatSettings.apiUrl) ? chatSettings.apiUrl : 'custom'}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setChatSettings(prev => ({
+                          ...prev,
+                          apiUrl: val === 'custom' ? 'custom-url' : val
+                        }));
+                      }}
+                      style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'rgba(255,248,231,0.5)', color: 'var(--text-main)' }}
+                    >
+                      <option value="https://store.hachimi-ai.com">https://store.hachimi-ai.com</option>
+                      <option value="https://api-inference.modelscope.cn/v1">https://api-inference.modelscope.cn/v1</option>
+                      <option value="http://10.10.0.35/v1">http://10.10.0.35/v1</option>
+                      <option value="https://generativelanguage.googleapis.com">https://generativelanguage.googleapis.com (默认)</option>
+                      <option value="custom">自定义...</option>
+                    </select>
+                    {!['https://store.hachimi-ai.com', 'https://api-inference.modelscope.cn/v1', 'http://10.10.0.35/v1', 'https://generativelanguage.googleapis.com'].includes(chatSettings.apiUrl) && (
+                      <input
+                        type="text"
+                        value={chatSettings.apiUrl === 'custom-url' ? '' : chatSettings.apiUrl}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setChatSettings(prev => ({ ...prev, apiUrl: val }));
+                        }}
+                        placeholder="输入自定义 API 地址"
+                        style={{ marginTop: '5px' }}
+                      />
+                    )}
+                  </div>
+
+                  <div className="input-group">
+                    <label>授权密钥 (API Key) {(!chatSettings.apiUrl || chatSettings.apiUrl.includes('googleapis.com')) && <span style={{ fontSize: '0.8em', color: 'rgba(0,0,0,0.4)' }}>(由服务器托管)</span>}</label>
+                    <input
+                      type="password"
+                      value={chatSettings.apiKey}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setChatSettings(prev => ({ ...prev, apiKey: val }));
+                      }}
+                      disabled={!chatSettings.apiUrl || chatSettings.apiUrl.includes('googleapis.com')}
+                      placeholder={(!chatSettings.apiUrl || chatSettings.apiUrl.includes('googleapis.com')) ? "无需填写 (服务器自动注入)" : "sk-..."}
+                    />
+                  </div>
+
+                  <div className="input-group">
+                    <label>对话模型 (Chat Model)</label>
+                    <select
+                      className="model-select"
+                      value={['gpt5-4', 'gpt5-5', 'Qwen3_6', 'deepseek-ai/DeepSeek-V4-Flash'].includes(chatSettings.model) ? chatSettings.model : 'custom'}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setChatSettings(prev => ({
+                          ...prev,
+                          model: val === 'custom' ? 'custom-model-id' : val
+                        }));
+                      }}
+                      style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'rgba(255,248,231,0.5)', color: 'var(--text-main)' }}
+                    >
+                      <option value="gpt5-4">gpt5-4</option>
+                      <option value="gpt5-5">gpt5-5</option>
+                      <option value="Qwen3_6">Qwen3_6</option>
+                      <option value="deepseek-ai/DeepSeek-V4-Flash">deepseek-ai/DeepSeek-V4-Flash</option>
+                      <option value="custom">自定义...</option>
+                    </select>
+                    {!['gpt5-4', 'gpt5-5', 'Qwen3_6', 'deepseek-ai/DeepSeek-V4-Flash'].includes(chatSettings.model) && (
+                      <input
+                        type="text"
+                        value={chatSettings.model === 'custom-model-id' ? '' : chatSettings.model}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setChatSettings(prev => ({ ...prev, model: val }));
+                        }}
+                        placeholder="输入模型名称 (如 deepseek-chat)"
+                        style={{ marginTop: '5px' }}
+                      />
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
 

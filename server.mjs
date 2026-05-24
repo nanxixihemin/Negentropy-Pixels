@@ -410,8 +410,9 @@ const server = http.createServer(async (req, res) => {
             res.end(JSON.stringify({ refinedPrompt }));
         } catch (err) {
             console.error('[Alchemy] 内部错误:', err);
+            const errMsg = err.message + (err.cause ? ` (${err.cause.message || err.cause})` : '');
             res.writeHead(500, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: '炼金失败: ' + err.message }));
+            res.end(JSON.stringify({ error: '炼金失败: ' + errMsg }));
         }
         return;
     }
@@ -445,8 +446,9 @@ const server = http.createServer(async (req, res) => {
             res.end(JSON.stringify({ content }));
         } catch (err) {
             console.error('[Alchemy-Chat] 错误:', err);
+            const errMsg = err.message + (err.cause ? ` (${err.cause.message || err.cause})` : '');
             res.writeHead(500, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: err.message }));
+            res.end(JSON.stringify({ error: errMsg }));
         }
         return;
     }
@@ -475,8 +477,9 @@ const server = http.createServer(async (req, res) => {
             return;
         } catch (error) {
             console.error('[Chat] 请求处理失败:', error);
+            const errMsg = error.message + (error.cause ? ` (${error.cause.message || error.cause})` : '');
             res.writeHead(500, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: error.message || '服务器错误' }));
+            res.end(JSON.stringify({ error: errMsg }));
             return;
         }
     }
@@ -515,8 +518,9 @@ const server = http.createServer(async (req, res) => {
             res.end(JSON.stringify({ imageUrl }));
         } catch (err) {
             console.error('[ImageGen] 内部错误:', err);
+            const errMsg = err.message + (err.cause ? ` (${err.cause.message || err.cause})` : '');
             res.writeHead(500, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: err.message || '生图失败' }));
+            res.end(JSON.stringify({ error: errMsg }));
         }
         return;
     }

@@ -755,6 +755,25 @@ function Home() {
     setUploadedImage(null)
   }
 
+  const pollImageJob = async (jobId) => {
+    const deadline = Date.now() + 15 * 60 * 1000
+    while (Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 2000))
+      const res = await fetch(`/api/generate-image/${encodeURIComponent(jobId)}`)
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        throw new Error(data.error || `生图任务查询失败: ${res.statusText}`)
+      }
+      if (data.status === 'succeeded' && data.imageUrl) {
+        return data.imageUrl
+      }
+      if (data.status === 'failed') {
+        throw new Error(data.error || '生图任务失败')
+      }
+    }
+    throw new Error('生图任务等待超时，请稍后在服务日志中确认结果')
+  }
+
   const generateImage = async () => {
     if (!prompt) return
     if (mode === 'img2img' && !uploadedImage) {
@@ -795,12 +814,13 @@ function Home() {
         throw new Error(data.error || `生图失败: ${response.statusText}`)
       }
 
-      if (!data.imageUrl) {
+      const generatedImageUrl = data.imageUrl || (data.jobId ? await pollImageJob(data.jobId) : null)
+      if (!generatedImageUrl) {
         throw new Error('未在响应中找到图片数据')
       }
 
-      setImageUrl(data.imageUrl)
-      addToHistory(data.imageUrl, finalPrompt)
+      setImageUrl(generatedImageUrl)
+      addToHistory(generatedImageUrl, finalPrompt)
     } catch (err) {
       console.error(err)
       setError(err.message)

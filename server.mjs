@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { Buffer } from 'buffer';
+import crypto from 'crypto';
 import 'dotenv/config';
 import { createGalleryRepository } from './server/repositories/galleryRepository.mjs';
 import { createImprintRepository } from './server/repositories/imprintRepository.mjs';
@@ -18,6 +19,8 @@ const DATA_DIR = path.join(__dirname, 'server-data');
 const GALLERY_DIR = path.join(DATA_DIR, 'gallery');
 const GALLERY_META = path.join(DATA_DIR, 'gallery.json');
 const DATABASE_PATH = path.join(DATA_DIR, 'negentropy.db');
+const IMAGE_JOB_TTL_MS = 30 * 60 * 1000;
+const imageJobs = new Map();
 const galleryRepository = createGalleryRepository({
     dataDir: DATA_DIR,
     dbPath: DATABASE_PATH,
@@ -124,6 +127,68 @@ async function resolveImageBuffer(image) {
 }
 
 // 通用 LLM 调用辅助函数 - 兼容 Gemini 和 OpenAI-compatible (GPT) 接口
+function formatImageGenerationError(err) {
+    let errMsg = err.message;
+    if (errMsg.includes('524') || errMsg.includes('504') || errMsg.includes('timeout') || errMsg.includes('Timeout')) {
+        return '生图超时：生图服务商响应时间较长，后台任务已结束。建议稍后重试，或在“设置”中更换更快的生图模型/接口。';
+    }
+    return err.message + (err.cause ? ` (${err.cause.message || err.cause})` : '');
+}
+
+function serializeImageJob(job) {
+    return {
+        jobId: job.id,
+        status: job.status,
+        imageUrl: job.imageUrl || null,
+        error: job.error || null,
+        elapsedMs: job.finishedAt ? job.finishedAt - job.createdAt : Date.now() - job.createdAt
+    };
+}
+
+function pruneImageJobs() {
+    const now = Date.now();
+    for (const [id, job] of imageJobs.entries()) {
+        if (now - job.createdAt > IMAGE_JOB_TTL_MS) {
+            imageJobs.delete(id);
+        }
+    }
+}
+
+function startImageJob(params) {
+    pruneImageJobs();
+    const job = {
+        id: crypto.randomUUID(),
+        status: 'pending',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        imageUrl: null,
+        error: null
+    };
+    imageJobs.set(job.id, job);
+
+    Promise.resolve().then(async () => {
+        try {
+            job.status = 'running';
+            job.updatedAt = Date.now();
+            console.log(`[ImageGen] 后台任务开始, Job: ${job.id}, Model: ${params.model || 'default'}, ApiUrl: ${params.apiUrl || 'default'}`);
+            const imageUrl = await callLLMImage(params);
+            job.status = 'succeeded';
+            job.imageUrl = imageUrl;
+            job.finishedAt = Date.now();
+            job.updatedAt = job.finishedAt;
+            console.log(`[ImageGen] 后台任务成功, Job: ${job.id}, 用时 ${job.finishedAt - job.createdAt}ms`);
+        } catch (err) {
+            job.status = 'failed';
+            job.error = formatImageGenerationError(err);
+            job.finishedAt = Date.now();
+            job.updatedAt = job.finishedAt;
+            console.error(`[ImageGen] 后台任务失败, Job: ${job.id}:`, err);
+        }
+    });
+
+    return job;
+}
+
 async function callLLMChat({ messages, apiKey, apiUrl, model }) {
     const isGemini = (!apiUrl || apiUrl.includes('googleapis.com') || (model && model.startsWith('gemini')));
     console.log(`[LLMChat] Request - Model: ${model || 'default'}, Url: ${apiUrl || 'default'}, isGemini: ${isGemini}`);
@@ -650,6 +715,18 @@ const server = http.createServer(async (req, res) => {
         }
     }
 
+    const imageJobMatch = req.url.match(/^\/api\/generate-image\/([a-f0-9-]+)$/i);
+    if (imageJobMatch && req.method === 'GET') {
+        pruneImageJobs();
+        const job = imageJobs.get(imageJobMatch[1]);
+        if (!job) {
+            sendJson(res, 404, { error: '生图任务不存在或已过期' });
+            return;
+        }
+        sendJson(res, 200, serializeImageJob(job));
+        return;
+    }
+
     // --- AI Image Generation Route ---
     if (req.url === '/api/generate-image' && req.method === 'POST') {
         console.log('[ImageGen] 收到生图请求');
@@ -667,9 +744,7 @@ const server = http.createServer(async (req, res) => {
                 return;
             }
 
-            const startedAt = Date.now();
-            console.log(`[ImageGen] 开始生成图片, Model: ${model || 'default'}, ApiUrl: ${apiUrl || 'default'}`);
-            const imageUrl = await callLLMImage({
+            const job = startImageJob({
                 prompt,
                 model,
                 apiUrl,
@@ -680,9 +755,8 @@ const server = http.createServer(async (req, res) => {
                 uploadedImage
             });
 
-            console.log(`[ImageGen] 生图成功，用时 ${Date.now() - startedAt}ms`);
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ imageUrl }));
+            console.log(`[ImageGen] 已创建后台任务, Job: ${job.id}`);
+            sendJson(res, 202, serializeImageJob(job));
         } catch (err) {
             console.error('[ImageGen] 内部错误:', err);
             let errMsg = err.message;

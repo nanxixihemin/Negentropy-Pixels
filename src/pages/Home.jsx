@@ -1035,7 +1035,7 @@ function Home() {
                 <div className="action-buttons" style={{ marginTop: '16px' }}>
                   <a
                     href={imageUrl}
-                    download={`banana-gen-${Date.now()}.jpg`}
+                    download={`legend-${Date.now()}.jpg`}
                     className="action-btn" // Use action-btn style from new CSS
                     target="_blank"
                     rel="noreferrer"
@@ -1102,7 +1102,7 @@ function Home() {
                       </button>
                       <a
                         href={item.url}
-                        download={`banana-gen-${item.id}.jpg`}
+                        download={`legend-${item.id}.jpg`}
                         className="history-action-btn download"
                         onClick={(e) => e.stopPropagation()}
                         title="下载"

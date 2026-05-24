@@ -424,6 +424,16 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
+    if (req.url === '/api/auth/reset-password' && req.method === 'POST') {
+        try {
+            const result = userRepository.resetPassword(await readJsonBody(req));
+            sendJson(res, 200, result);
+        } catch (err) {
+            sendJson(res, 400, { error: err.message });
+        }
+        return;
+    }
+
     if (req.url === '/api/auth/login' && req.method === 'POST') {
         try {
             const result = userRepository.login(await readJsonBody(req));

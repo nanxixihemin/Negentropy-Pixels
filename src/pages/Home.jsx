@@ -91,10 +91,11 @@ function Home() {
   const [customModelName, setCustomModelName] = useState(() => localStorage.getItem('banana_home_custom_model_name') || '')
   const [authToken, setAuthToken] = useState(() => localStorage.getItem(AUTH_STORAGE_KEY) || '')
   const [currentUser, setCurrentUser] = useState(null)
-  const [showAuthModal, setShowAuthModal] = useState(false)
   const [authMode, setAuthMode] = useState('login')
-  const [authForm, setAuthForm] = useState({ username: '', password: '', nickname: '' })
+  const [authForm, setAuthForm] = useState({ username: '', password: '', nickname: '', securityQuestion: '', securityAnswer: '' })
   const [authError, setAuthError] = useState('')
+  const [recoveryForm, setRecoveryForm] = useState({ username: '', securityQuestion: '', securityAnswer: '', newPassword: '' })
+  const [recoverySuccess, setRecoverySuccess] = useState('')
 
   // Persistence Effects
   useEffect(() => { localStorage.setItem('banana_home_api_key', apiKey) }, [apiKey])
@@ -545,8 +546,27 @@ function Home() {
 
       setAuthToken(data.token)
       setCurrentUser(data.user)
-      setShowAuthModal(false)
-      setAuthForm({ username: '', password: '', nickname: '' })
+      setShowSettings(false)
+      setAuthForm({ username: '', password: '', nickname: '', securityQuestion: '', securityAnswer: '' })
+    } catch (e) {
+      setAuthError(e.message)
+    }
+  }
+
+  const submitRecovery = async () => {
+    setAuthError('')
+    setRecoverySuccess('')
+    try {
+      const res = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(recoveryForm)
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || '重置密码失败')
+
+      setRecoverySuccess('密码重置成功！请切换至“登录”页签进行登录。')
+      setRecoveryForm({ username: '', securityQuestion: '', securityAnswer: '', newPassword: '' })
     } catch (e) {
       setAuthError(e.message)
     }
@@ -733,26 +753,21 @@ function Home() {
         <div className="header-top-row">
           <h1 className="art-title">Negentropy Pixels</h1>
           <div className="header-controls">
-            {currentUser ? (
-              <>
-                {currentUser.role === 'admin' && (
-                  <button className="settings-btn" onClick={() => navigate('/admin')}>管理</button>
-                )}
-                <button className="settings-btn" onClick={logout}>{currentUser.nickname || currentUser.username}</button>
-              </>
-            ) : (
-              <button className="settings-btn" onClick={() => setShowAuthModal(true)}>登录</button>
+            {currentUser && currentUser.role === 'admin' && (
+              <button className="settings-btn" onClick={() => navigate('/admin')}>管理</button>
             )}
-          <button
-            className="settings-btn"
-            onClick={() => setShowSettings(!showSettings)}
-            title="设置"
-          >
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="#5D5D5D">
-              <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"></path>
-            </svg>
-            <span style={{ marginLeft: '4px', fontSize: '0.9rem', fontWeight: '800' }}>设置</span>
-          </button>
+            <button
+              className="settings-btn"
+              onClick={() => setShowSettings(!showSettings)}
+              title="设置与账号"
+            >
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="#5D5D5D">
+                <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"></path>
+              </svg>
+              <span style={{ marginLeft: '4px', fontSize: '0.9rem', fontWeight: '800' }}>
+                {currentUser ? `设置 (${currentUser.nickname || currentUser.username})` : '设置与登录'}
+              </span>
+            </button>
           </div>
         </div>
 
@@ -782,105 +797,269 @@ function Home() {
 
       </header>
 
-      {showAuthModal && (
-        <div className="modal-overlay" onClick={() => setShowAuthModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <h3>{authMode === 'register' ? '创建账号' : '登录账号'}</h3>
-            <div className="modal-field">
-              <label>用户名</label>
-              <input
-                type="text"
-                value={authForm.username}
-                onChange={(e) => setAuthForm({ ...authForm, username: e.target.value })}
-                placeholder="3-24 位字母、数字或下划线"
-              />
-            </div>
-            {authMode === 'register' && (
-              <div className="modal-field">
-                <label>昵称</label>
-                <input
-                  type="text"
-                  value={authForm.nickname}
-                  onChange={(e) => setAuthForm({ ...authForm, nickname: e.target.value })}
-                  placeholder="公开显示名称，可选"
-                />
-              </div>
-            )}
-            <div className="modal-field">
-              <label>密码</label>
-              <input
-                type="password"
-                value={authForm.password}
-                onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })}
-                placeholder="至少 6 位"
-              />
-            </div>
-            {authError && <div className="error-message">{authError}</div>}
-            <div className="modal-buttons">
-              <button
-                className="modal-btn cancel"
-                onClick={() => {
-                  setAuthMode(authMode === 'register' ? 'login' : 'register')
-                  setAuthError('')
-                }}
-              >
-                {authMode === 'register' ? '已有账号' : '创建账号'}
-              </button>
-              <button className="modal-btn confirm" onClick={submitAuth}>
-                {authMode === 'register' ? '注册并登录' : '登录'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {showSettings && (
         <div className="card settings-section glass-effect">
           <div className="settings-header">
-            <h3>⚙️ 代理与密钥配置</h3>
+            <h3>⚙️ 个人设置与账号中心</h3>
             <button className="close-mini-btn" onClick={() => setShowSettings(false)}>×</button>
           </div>
-          <p className="hint">配置您的 OpenAI 兼容代理地址与 Sk 密钥。此项设置将应用于图片生成、文本对话与“炼金”加速。</p>
-          <div className="input-group">
-            <label>代理地址 (API Endpoint)</label>
-            <select
-              className="model-select"
-              value={['https://store.hachimi-ai.com', 'https://api-inference.modelscope.cn/v1', 'http://10.10.0.35/v1', 'https://generativelanguage.googleapis.com'].includes(apiUrl) ? apiUrl : 'custom'}
-              onChange={(e) => {
-                const val = e.target.value;
-                if (val === 'custom') {
-                  setApiUrl('custom-url');
-                } else {
-                  setApiUrl(val);
-                }
-              }}
-              style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', background: 'var(--card-bg)', color: 'var(--text-main)' }}
-            >
-              <option value="https://store.hachimi-ai.com">https://store.hachimi-ai.com</option>
-              <option value="https://api-inference.modelscope.cn/v1">https://api-inference.modelscope.cn/v1</option>
-              <option value="http://10.10.0.35/v1">http://10.10.0.35/v1</option>
-              <option value="https://generativelanguage.googleapis.com">https://generativelanguage.googleapis.com (默认)</option>
-              <option value="custom">自定义...</option>
-            </select>
-            {!['https://store.hachimi-ai.com', 'https://api-inference.modelscope.cn/v1', 'http://10.10.0.35/v1', 'https://generativelanguage.googleapis.com'].includes(apiUrl) && (
-              <input
-                type="text"
-                value={apiUrl === 'custom-url' ? '' : apiUrl}
-                onChange={(e) => setApiUrl(e.target.value)}
-                placeholder="输入自定义 API 地址"
-                style={{ marginTop: '5px' }}
-              />
-            )}
-          </div>
-          <div className="input-group">
-            <label>授权密钥 (API Key) {(!apiUrl || apiUrl.includes('googleapis.com')) && <span style={{ fontSize: '0.8em', color: 'rgba(255,255,255,0.5)' }}>(由服务器托管)</span>}</label>
-            <input
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              disabled={!apiUrl || apiUrl.includes('googleapis.com')}
-              placeholder={(!apiUrl || apiUrl.includes('googleapis.com')) ? "无需填写 (服务器自动注入)" : "sk-..."}
-            />
+          <div className="settings-columns">
+            {/* Column 1: API settings */}
+            <div className="settings-col">
+              <div className="settings-auth-title">🛠️ API 与模型配置</div>
+              
+              <div className="input-group">
+                <label>代理地址 (API Endpoint)</label>
+                <select
+                  className="model-select"
+                  value={['https://store.hachimi-ai.com', 'https://api-inference.modelscope.cn/v1', 'http://10.10.0.35/v1', 'https://generativelanguage.googleapis.com'].includes(apiUrl) ? apiUrl : 'custom'}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === 'custom') {
+                      setApiUrl('custom-url');
+                    } else {
+                      setApiUrl(val);
+                    }
+                  }}
+                  style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', background: 'var(--card-bg)', color: 'var(--text-main)' }}
+                >
+                  <option value="https://store.hachimi-ai.com">https://store.hachimi-ai.com</option>
+                  <option value="https://api-inference.modelscope.cn/v1">https://api-inference.modelscope.cn/v1</option>
+                  <option value="http://10.10.0.35/v1">http://10.10.0.35/v1</option>
+                  <option value="https://generativelanguage.googleapis.com">https://generativelanguage.googleapis.com (默认)</option>
+                  <option value="custom">自定义...</option>
+                </select>
+                {!['https://store.hachimi-ai.com', 'https://api-inference.modelscope.cn/v1', 'http://10.10.0.35/v1', 'https://generativelanguage.googleapis.com'].includes(apiUrl) && (
+                  <input
+                    type="text"
+                    value={apiUrl === 'custom-url' ? '' : apiUrl}
+                    onChange={(e) => setApiUrl(e.target.value)}
+                    placeholder="输入自定义 API 地址"
+                    style={{ marginTop: '5px' }}
+                  />
+                )}
+              </div>
+
+              <div className="input-group">
+                <label>授权密钥 (API Key) {(!apiUrl || apiUrl.includes('googleapis.com')) && <span style={{ fontSize: '0.8em', color: 'rgba(0,0,0,0.4)' }}>(由服务器托管)</span>}</label>
+                <input
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  disabled={!apiUrl || apiUrl.includes('googleapis.com')}
+                  placeholder={(!apiUrl || apiUrl.includes('googleapis.com')) ? "无需填写 (服务器自动注入)" : "sk-..."}
+                />
+              </div>
+
+              <div className="input-group">
+                <label>生图模型 (Image Model)</label>
+                <select
+                  className="model-select"
+                  value={selectedModelId}
+                  onChange={(e) => setSelectedModelId(e.target.value)}
+                  style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', background: 'var(--card-bg)', color: 'var(--text-main)' }}
+                >
+                  {AVAILABLE_MODELS.map(m => (
+                    <option key={m.id} value={m.id}>{m.label}</option>
+                  ))}
+                </select>
+                {selectedModelId === 'custom' && (
+                  <input
+                    type="text"
+                    value={customModelName}
+                    onChange={(e) => setCustomModelName(e.target.value)}
+                    placeholder="输入模型名称 (如 gemini-1.5-pro)"
+                    style={{ marginTop: '5px' }}
+                  />
+                )}
+              </div>
+            </div>
+
+            {/* Column 2: Account system */}
+            <div className="settings-col">
+              {currentUser ? (
+                // Logged in
+                <div>
+                  <div className="settings-auth-title">👤 已登录账号</div>
+                  <div className="settings-auth-welcome" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div><strong>昵称：</strong>{currentUser.nickname}</div>
+                    <div><strong>邮箱：</strong>{currentUser.username}</div>
+                    <div><strong>身份：</strong>{currentUser.role === 'admin' ? '系统管理员' : '普通用户'}</div>
+                    <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+                      {currentUser.role === 'admin' && (
+                        <button className="settings-tab-btn active" onClick={() => navigate('/admin')} style={{ flex: 1, padding: '8px', textAlign: 'center' }}>
+                          进入后台管理
+                        </button>
+                      )}
+                      <button className="settings-tab-btn" onClick={logout} style={{ flex: 1, border: '1px solid var(--border-color)', padding: '8px', textAlign: 'center' }}>
+                        退出登录
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                // Not logged in
+                <div>
+                  <div className="settings-tab-headers">
+                    <button
+                      className={`settings-tab-btn ${authMode === 'login' ? 'active' : ''}`}
+                      onClick={() => { setAuthMode('login'); setAuthError(''); }}
+                    >
+                      登录
+                    </button>
+                    <button
+                      className={`settings-tab-btn ${authMode === 'register' ? 'active' : ''}`}
+                      onClick={() => { setAuthMode('register'); setAuthError(''); }}
+                    >
+                      注册
+                    </button>
+                    <button
+                      className={`settings-tab-btn ${authMode === 'recovery' ? 'active' : ''}`}
+                      onClick={() => { setAuthMode('recovery'); setAuthError(''); setRecoverySuccess(''); }}
+                    >
+                      找回密码
+                    </button>
+                  </div>
+
+                  {authMode === 'login' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <div className="input-group">
+                        <label>邮箱</label>
+                        <input
+                          type="email"
+                          value={authForm.username}
+                          onChange={(e) => setAuthForm({ ...authForm, username: e.target.value })}
+                          placeholder="请输入您的邮箱"
+                        />
+                      </div>
+                      <div className="input-group">
+                        <label>密码</label>
+                        <input
+                          type="password"
+                          value={authForm.password}
+                          onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })}
+                          placeholder="请输入密码"
+                        />
+                      </div>
+                      {authError && <div className="error-message" style={{ color: 'var(--primary-text)', fontSize: '0.85rem' }}>{authError}</div>}
+                      <button className="settings-tab-btn active" onClick={submitAuth} style={{ width: '100%', padding: '10px', marginTop: '5px' }}>
+                        立即登录
+                      </button>
+                    </div>
+                  )}
+
+                  {authMode === 'register' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <div className="input-group">
+                        <label>邮箱</label>
+                        <input
+                          type="email"
+                          value={authForm.username}
+                          onChange={(e) => setAuthForm({ ...authForm, username: e.target.value })}
+                          placeholder="请输入有效的邮箱地址"
+                        />
+                      </div>
+                      <div className="input-group">
+                        <label>昵称 (可选)</label>
+                        <input
+                          type="text"
+                          value={authForm.nickname}
+                          onChange={(e) => setAuthForm({ ...authForm, nickname: e.target.value })}
+                          placeholder="公开显示昵称"
+                        />
+                      </div>
+                      <div className="input-group">
+                        <label>密码</label>
+                        <input
+                          type="password"
+                          value={authForm.password}
+                          onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })}
+                          placeholder="至少需要 6 位"
+                        />
+                      </div>
+                      <div className="input-group">
+                        <label>密保问题</label>
+                        <select
+                          value={authForm.securityQuestion || ''}
+                          onChange={(e) => setAuthForm({ ...authForm, securityQuestion: e.target.value })}
+                          style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid var(--border-color)', background: '#fff', color: '#000' }}
+                        >
+                          <option value="">-- 请选择密保问题 (用于找回密码) --</option>
+                          <option value="pet">我最喜欢的宠物名字是什么？</option>
+                          <option value="food">我最喜欢的食物是什么？</option>
+                          <option value="city">我的出生城市是哪里？</option>
+                          <option value="mother">我母亲的姓名是什么？</option>
+                        </select>
+                      </div>
+                      <div className="input-group">
+                        <label>密保答案</label>
+                        <input
+                          type="text"
+                          value={authForm.securityAnswer || ''}
+                          onChange={(e) => setAuthForm({ ...authForm, securityAnswer: e.target.value })}
+                          placeholder="请输入密保问题答案"
+                        />
+                      </div>
+                      {authError && <div className="error-message" style={{ color: 'var(--primary-text)', fontSize: '0.85rem' }}>{authError}</div>}
+                      <button className="settings-tab-btn active" onClick={submitAuth} style={{ width: '100%', padding: '10px', marginTop: '5px' }}>
+                        注册并登录
+                      </button>
+                    </div>
+                  )}
+
+                  {authMode === 'recovery' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <div className="input-group">
+                        <label>注册邮箱</label>
+                        <input
+                          type="email"
+                          value={recoveryForm.username}
+                          onChange={(e) => setRecoveryForm({ ...recoveryForm, username: e.target.value })}
+                          placeholder="请输入注册时填写的邮箱"
+                        />
+                      </div>
+                      <div className="input-group">
+                        <label>密保问题</label>
+                        <select
+                          value={recoveryForm.securityQuestion || ''}
+                          onChange={(e) => setRecoveryForm({ ...recoveryForm, securityQuestion: e.target.value })}
+                          style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid var(--border-color)', background: '#fff', color: '#000' }}
+                        >
+                          <option value="">-- 请选择您的密保问题 --</option>
+                          <option value="pet">我最喜欢的宠物名字是什么？</option>
+                          <option value="food">我最喜欢的食物是什么？</option>
+                          <option value="city">我的出生城市是哪里？</option>
+                          <option value="mother">我母亲的姓名是什么？</option>
+                        </select>
+                      </div>
+                      <div className="input-group">
+                        <label>密保答案</label>
+                        <input
+                          type="text"
+                          value={recoveryForm.securityAnswer}
+                          onChange={(e) => setRecoveryForm({ ...recoveryForm, securityAnswer: e.target.value })}
+                          placeholder="请输入您的密保答案"
+                        />
+                      </div>
+                      <div className="input-group">
+                        <label>设置新密码</label>
+                        <input
+                          type="password"
+                          value={recoveryForm.newPassword}
+                          onChange={(e) => setRecoveryForm({ ...recoveryForm, newPassword: e.target.value })}
+                          placeholder="新密码至少需要 6 位"
+                        />
+                      </div>
+                      {authError && <div className="error-message" style={{ color: 'var(--primary-text)', fontSize: '0.85rem' }}>{authError}</div>}
+                      {recoverySuccess && <div className="success-message" style={{ color: 'green', fontSize: '0.85rem', fontWeight: 'bold' }}>{recoverySuccess}</div>}
+                      <button className="settings-tab-btn active" onClick={submitRecovery} style={{ width: '100%', padding: '10px', marginTop: '5px' }}>
+                        重置密码
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -1100,31 +1279,7 @@ function Home() {
                 )}
               </div>
 
-              {/* 模型选择 */}
-              <div className="model-selector-section">
-                <label className="section-label">AI 模型</label>
-                <div className="model-controls">
-                  <select
-                    className="model-select"
-                    value={selectedModelId}
-                    onChange={(e) => setSelectedModelId(e.target.value)}
-                  >
-                    {AVAILABLE_MODELS.map(m => (
-                      <option key={m.id} value={m.id}>{m.label}</option>
-                    ))}
-                  </select>
 
-                  {selectedModelId === 'custom' && (
-                    <input
-                      type="text"
-                      className="custom-model-input"
-                      placeholder="输入模型名称 (如 gemini-1.5-pro)"
-                      value={customModelName}
-                      onChange={(e) => setCustomModelName(e.target.value)}
-                    />
-                  )}
-                </div>
-              </div>
 
               {/* 图片比例选择 */}
               {/* Pictures Ratio and Quality Selection */}

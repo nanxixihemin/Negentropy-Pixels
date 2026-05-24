@@ -61,13 +61,23 @@ export function createUserRepository({ dataDir, dbPath }) {
             ON user_sessions (user_id);
     `);
 
+    // Dynamically migrate table to support password recovery columns if they don't exist
+    try {
+        db.exec(`
+            ALTER TABLE users ADD COLUMN security_question TEXT;
+            ALTER TABLE users ADD COLUMN security_answer TEXT;
+        `);
+    } catch (e) {
+        // Ignored: columns might already exist
+    }
+
     function countUsers() {
         return db.prepare('SELECT COUNT(*) AS count FROM users').get().count;
     }
 
     function getUserByUsername(username) {
         return db.prepare(`
-            SELECT id, username, nickname, password_hash, role, created_at
+            SELECT id, username, nickname, password_hash, role, created_at, security_question, security_answer
             FROM users
             WHERE username = ?
         `).get(username);
@@ -86,17 +96,22 @@ export function createUserRepository({ dataDir, dbPath }) {
     }
 
     return {
-        register({ username, password, nickname }) {
+        register({ username, password, nickname, securityQuestion, securityAnswer }) {
             const cleanUsername = String(username || '').trim();
             const cleanNickname = String(nickname || '').trim();
-            if (!/^[a-zA-Z0-9_]{3,24}$/.test(cleanUsername)) {
-                throw new Error('用户名只能包含 3-24 位字母、数字或下划线');
+            
+            // Validate email format
+            if (!/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(cleanUsername)) {
+                throw new Error('请输入有效的邮箱地址（格式如: example@domain.com）');
             }
             if (String(password || '').length < 6) {
                 throw new Error('密码至少需要 6 位');
             }
+            if (!securityQuestion || !String(securityAnswer || '').trim()) {
+                throw new Error('请选择安全问题并填写密保答案，用于日后找回密码');
+            }
             if (getUserByUsername(cleanUsername)) {
-                throw new Error('用户名已存在');
+                throw new Error('该邮箱地址已被注册');
             }
 
             const now = Date.now();
@@ -106,13 +121,24 @@ export function createUserRepository({ dataDir, dbPath }) {
                 nickname: cleanNickname || cleanUsername,
                 passwordHash: hashPassword(password),
                 role: countUsers() === 0 ? 'admin' : 'user',
-                createdAt: now
+                createdAt: now,
+                securityQuestion,
+                securityAnswer: String(securityAnswer || '').trim().toLowerCase()
             };
 
             db.prepare(`
-                INSERT INTO users (id, username, nickname, password_hash, role, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-            `).run(user.id, user.username, user.nickname, user.passwordHash, user.role, user.createdAt);
+                INSERT INTO users (id, username, nickname, password_hash, role, created_at, security_question, security_answer)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            `).run(
+                user.id, 
+                user.username, 
+                user.nickname, 
+                user.passwordHash, 
+                user.role, 
+                user.createdAt, 
+                user.securityQuestion, 
+                user.securityAnswer
+            );
 
             const session = createSession(user.id);
             return { user: normalizeUser(user), ...session };
@@ -121,7 +147,7 @@ export function createUserRepository({ dataDir, dbPath }) {
         login({ username, password }) {
             const user = getUserByUsername(String(username || '').trim());
             if (!user || !verifyPassword(password, user.password_hash)) {
-                throw new Error('用户名或密码错误');
+                throw new Error('邮箱或密码错误');
             }
 
             const session = createSession(user.id);
@@ -156,6 +182,36 @@ export function createUserRepository({ dataDir, dbPath }) {
             if (!token) return false;
             const result = db.prepare('DELETE FROM user_sessions WHERE token_hash = ?').run(hashToken(token));
             return result.changes > 0;
+        },
+
+        resetPassword({ username, securityQuestion, securityAnswer, newPassword }) {
+            const cleanUsername = String(username || '').trim();
+            const cleanAnswer = String(securityAnswer || '').trim().toLowerCase();
+            const user = getUserByUsername(cleanUsername);
+
+            if (!user) {
+                throw new Error('该邮箱地址未注册');
+            }
+            if (!user.security_question) {
+                throw new Error('该账号在升级前注册，未配置密保问题。请联系管理员手动找回。');
+            }
+            if (user.security_question !== securityQuestion) {
+                throw new Error('密保问题不匹配，重置失败');
+            }
+            if (user.security_answer !== cleanAnswer) {
+                throw new Error('密保答案错误，重置失败');
+            }
+            if (String(newPassword || '').length < 6) {
+                throw new Error('新密码至少需要 6 位');
+            }
+
+            const newHash = hashPassword(newPassword);
+            db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(newHash, user.id);
+
+            // Invalidate all existing sessions for security
+            db.prepare('DELETE FROM user_sessions WHERE user_id = ?').run(user.id);
+
+            return { success: true };
         }
     };
 }

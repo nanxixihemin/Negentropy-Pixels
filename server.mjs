@@ -658,7 +658,12 @@ const server = http.createServer(async (req, res) => {
             res.end(JSON.stringify({ imageUrl }));
         } catch (err) {
             console.error('[ImageGen] 内部错误:', err);
-            const errMsg = err.message + (err.cause ? ` (${err.cause.message || err.cause})` : '');
+            let errMsg = err.message;
+            if (errMsg.includes('524') || errMsg.includes('504') || errMsg.includes('timeout') || errMsg.includes('Timeout')) {
+                errMsg = '生图超时：生图服务商响应时间超过了 100 秒限制。建议稍后重试，或在“设置”中更换更快的生图模型/接口。';
+            } else {
+                errMsg = err.message + (err.cause ? ` (${err.cause.message || err.cause})` : '');
+            }
             res.writeHead(500, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: errMsg }));
         }

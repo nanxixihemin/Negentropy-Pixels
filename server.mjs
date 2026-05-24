@@ -79,6 +79,9 @@ async function callLLMChat({ messages, apiKey, apiUrl, model }) {
         }
 
         let endpoint = resolvedApiUrl;
+        if (!endpoint.includes('/v1') && !endpoint.includes('/v1beta')) {
+            endpoint = endpoint.replace(/\/$/, '') + '/v1';
+        }
         if (!endpoint.endsWith('/chat/completions') && !endpoint.endsWith('/completions')) {
             endpoint = endpoint.replace(/\/$/, '') + '/chat/completions';
         }
@@ -215,6 +218,9 @@ async function callLLMImage({ prompt, apiKey, apiUrl, model, aspectRatio, qualit
         }
 
         let endpoint = resolvedApiUrl;
+        if (!endpoint.includes('/v1') && !endpoint.includes('/v1beta')) {
+            endpoint = endpoint.replace(/\/$/, '') + '/v1';
+        }
         if (!endpoint.endsWith('/images/generations')) {
             endpoint = endpoint.replace(/\/$/, '') + '/images/generations';
         }

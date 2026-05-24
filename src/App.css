@@ -1054,6 +1054,34 @@ input:focus {
   padding: var(--s-2);
 }
 
+.plaza-filter {
+  display: inline-flex;
+  gap: 6px;
+  padding: 6px;
+  margin: var(--s-3) 0 var(--s-4);
+  background: var(--bg-card);
+  border: 2px solid var(--border-color);
+  border-radius: var(--r-item);
+  box-shadow: 2px 2px 0px var(--secondary);
+}
+
+.plaza-filter-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-sub);
+  border-radius: 10px;
+  padding: 7px 14px;
+  font-weight: 900;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.plaza-filter-btn.active {
+  background: var(--highlight);
+  color: var(--text-main);
+  box-shadow: 2px 2px 0px var(--border-color);
+}
+
 .plaza-item {
   background: var(--bg-card);
   border-radius: var(--r-item);
@@ -1160,6 +1188,26 @@ input:focus {
   margin-bottom: 2px;
 }
 
+.prompt-preview-btn {
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text-main);
+  cursor: pointer;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  padding: 0;
+  text-align: left;
+  font: inherit;
+  line-height: 1.4;
+}
+
+.prompt-preview-btn:hover {
+  color: var(--primary-text);
+}
+
 .plaza-caption {
   font-size: 0.75rem;
   color: var(--text-sub);
@@ -1238,13 +1286,40 @@ input:focus {
 }
 
 .admin-gallery-actions {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   border-top: var(--border-width) solid var(--border-color);
   background: var(--bg-card);
 }
 
 .admin-gallery-actions .history-action-btn {
   min-height: 34px;
+  min-width: 0;
+  white-space: nowrap;
+  opacity: 1;
+  position: static;
+}
+
+.prompt-detail-modal {
+  max-width: 560px;
+}
+
+.prompt-detail-modal h3 {
+  margin-top: 0;
+}
+
+.prompt-detail-text {
+  max-height: 55vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  text-align: left;
+  line-height: 1.65;
+  color: var(--text-main);
+  background: var(--bg-light);
+  border: 2px solid var(--border-color);
+  border-radius: var(--r-item);
+  padding: var(--s-4);
 }
 
 /* Modal */

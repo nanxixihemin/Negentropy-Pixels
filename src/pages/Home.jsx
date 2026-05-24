@@ -422,6 +422,7 @@ function Home() {
   // 昵称状态
   const [nickname, setNickname] = useState('')
   const [showShareModal, setShowShareModal] = useState(false)
+  const [selectedGalleryItem, setSelectedGalleryItem] = useState(null)
   const [pendingShareItem, setPendingShareItem] = useState(null)
   const [shareWithNickname, setShareWithNickname] = useState(true)
   const [deviceId, setDeviceId] = useState('')
@@ -1623,7 +1624,7 @@ function Home() {
             ) : (
               <div className="plaza-grid">
                 {visiblePublicGallery.map((item) => (
-                  <div key={item.id} className="plaza-item">
+                  <div key={item.id} className="plaza-item" onClick={() => setSelectedGalleryItem(item)} style={{ cursor: 'pointer' }}>
                     <img
                       src={`/uploads/${item.filename}`}
                       alt={item.prompt}
@@ -1633,29 +1634,24 @@ function Home() {
                     {item.deviceId === deviceId && (
                       <button
                         className="plaza-delete-btn"
-                        onClick={() => deletePlazaItem(item.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deletePlazaItem(item.id);
+                        }}
                         title="删除我的分享"
                       >
                         删除
                       </button>
                     )}
                     <div className="plaza-info">
-                      {item.author && (
-                        <div className="plaza-author">
-                          <span className="author-avatar" style={{
-                            background: `hsl(${item.author.charCodeAt(0) * 137 % 360}, 70%, 60%)`
-                          }}>
-                            {item.author.charAt(0).toUpperCase()}
-                          </span>
-                          {item.author}
-                        </div>
-                      )}
-                      {item.prompt && (
-                        <div className="plaza-prompt"><span className="badge-tag">提示词</span> {item.prompt}</div>
-                      )}
-                      {item.caption && (
-                        <div className="plaza-caption"><span className="badge-tag">感悟</span> {item.caption}</div>
-                      )}
+                      <div className="plaza-author">
+                        <span className="author-avatar" style={{
+                          background: `hsl(${((item.author || '匿名').charCodeAt(0) || 0) * 137 % 360}, 70%, 60%)`
+                        }}>
+                          {(item.author || '匿名').charAt(0).toUpperCase()}
+                        </span>
+                        {item.author || '匿名'}
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -1714,6 +1710,98 @@ function Home() {
             </div>
           </div>
         )
+      }
+
+      {/* Gallery Item Details Modal */}
+      {selectedGalleryItem && (
+        <div className="modal-overlay" onClick={() => setSelectedGalleryItem(null)}>
+          <div className="modal-content prompt-detail-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px', width: '90%', borderRadius: '16px', padding: '24px' }}>
+            <h3 style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>✨ 作品详情</h3>
+            
+            {/* Image Container */}
+            <div style={{ position: 'relative', width: '100%', borderRadius: '12px', overflow: 'hidden', marginBottom: '16px', background: '#000', display: 'flex', justifyContent: 'center' }}>
+              <img
+                src={`/uploads/${selectedGalleryItem.filename}`}
+                alt={selectedGalleryItem.prompt}
+                style={{ maxWidth: '100%', maxHeight: '400px', objectFit: 'contain' }}
+              />
+            </div>
+
+            {/* Creator Information */}
+            <div className="plaza-author" style={{ marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <strong style={{ fontSize: '0.9rem' }}>生成者：</strong>
+              <span className="author-avatar" style={{
+                background: `hsl(${((selectedGalleryItem.author || '匿名').charCodeAt(0) || 0) * 137 % 360}, 70%, 60%)`,
+                width: '24px',
+                height: '24px',
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#fff',
+                fontSize: '0.8rem',
+                fontWeight: 'bold',
+                marginRight: '4px'
+              }}>
+                {(selectedGalleryItem.author || '匿名').charAt(0).toUpperCase()}
+              </span>
+              <span style={{ fontSize: '0.9rem', fontWeight: 'bold' }}>{selectedGalleryItem.author || '匿名'}</span>
+            </div>
+
+            {/* Prompt Block */}
+            {selectedGalleryItem.prompt && (
+              <div style={{ marginBottom: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <strong style={{ fontSize: '0.9rem' }}>提示词 (Prompt)：</strong>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      className="settings-tab-btn active"
+                      style={{ fontSize: '0.75rem', padding: '4px 8px', height: '28px', display: 'flex', alignItems: 'center' }}
+                      onClick={() => {
+                        navigator.clipboard.writeText(selectedGalleryItem.prompt);
+                        alert('提示词已复制到剪贴板！');
+                      }}
+                    >
+                      复制
+                    </button>
+                    <button
+                      className="settings-tab-btn active"
+                      style={{ fontSize: '0.75rem', padding: '4px 8px', height: '28px', display: 'flex', alignItems: 'center', background: 'var(--primary)', borderColor: 'var(--primary-text)' }}
+                      onClick={() => {
+                        setPrompt(selectedGalleryItem.prompt);
+                        setSelectedGalleryItem(null);
+                        setActiveTab('create');
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                      }}
+                    >
+                      使用提示词
+                    </button>
+                  </div>
+                </div>
+                <div style={{ padding: '10px 14px', background: 'rgba(0,0,0,0.03)', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '0.85rem', wordBreak: 'break-all', whiteSpace: 'pre-wrap', color: 'var(--text-main)', textAlign: 'left' }}>
+                  {selectedGalleryItem.prompt}
+                </div>
+              </div>
+            )}
+
+            {/* Caption Block */}
+            {selectedGalleryItem.caption && (
+              <div style={{ marginBottom: '16px' }}>
+                <strong style={{ fontSize: '0.9rem' }}>分享感悟：</strong>
+                <div style={{ padding: '10px 14px', background: 'rgba(0,0,0,0.03)', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '0.85rem', color: 'var(--text-sub)', textAlign: 'left' }}>
+                  {selectedGalleryItem.caption}
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px' }}>
+              <button className="modal-btn confirm" onClick={() => setSelectedGalleryItem(null)}>
+                关闭
+              </button>
+            </div>
+          </div>
+        </div>
+      )
       }
 
       {/* Template Management Modal */}

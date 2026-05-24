@@ -23,6 +23,7 @@ const MIME_TYPES = {
 // 通用 LLM 调用辅助函数 - 兼容 Gemini 和 OpenAI-compatible (GPT) 接口
 async function callLLMChat({ messages, apiKey, apiUrl, model }) {
     const isGemini = (!apiUrl || apiUrl.includes('googleapis.com') || (model && model.startsWith('gemini')));
+    console.log(`[LLMChat] Request - Model: ${model || 'default'}, Url: ${apiUrl || 'default'}, isGemini: ${isGemini}`);
 
     if (isGemini) {
         const resolvedApiKey = apiKey || process.env.GEMINI_API_KEY;
@@ -132,6 +133,7 @@ async function callLLMChat({ messages, apiKey, apiUrl, model }) {
 // 通用 AI 生图辅助函数 - 兼容 Gemini 和 OpenAI-compatible (GPT) 生图接口
 async function callLLMImage({ prompt, apiKey, apiUrl, model, aspectRatio, quality, mode, uploadedImage }) {
     const isGemini = (!apiUrl || apiUrl.includes('googleapis.com') || (model && model.includes('gemini')));
+    console.log(`[LLMImage] Request - Model: ${model || 'default'}, Url: ${apiUrl || 'default'}, isGemini: ${isGemini}`);
 
     if (isGemini) {
         const resolvedApiKey = apiKey || process.env.GEMINI_API_KEY;

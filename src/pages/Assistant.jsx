@@ -46,11 +46,18 @@ function Assistant() {
     const triggerAI = async (history) => {
         setLoading(true)
         try {
-            const savedApiUrl = localStorage.getItem('banana_home_api_url') || '';
-            const savedApiKey = localStorage.getItem('banana_home_api_key') || '';
-            const savedModelId = localStorage.getItem('banana_home_model_id') || 'gemini-3-pro-image-preview';
-            const savedCustomModel = localStorage.getItem('banana_home_custom_model_name') || '';
-            const resolvedModel = savedModelId === 'custom' ? savedCustomModel : savedModelId;
+            let savedApiKey = ''
+            let savedApiUrl = 'https://generativelanguage.googleapis.com'
+            let resolvedModel = 'gpt5-4'
+            try {
+                const savedChatSettings = localStorage.getItem('banana_chat_api_settings')
+                if (savedChatSettings) {
+                    const parsed = JSON.parse(savedChatSettings)
+                    savedApiKey = parsed.apiKey || ''
+                    savedApiUrl = parsed.apiUrl || 'https://generativelanguage.googleapis.com'
+                    resolvedModel = parsed.model || 'gpt5-4'
+                }
+            } catch (e) {}
 
             const res = await fetch('/api/alchemy-chat', {
                 method: 'POST',

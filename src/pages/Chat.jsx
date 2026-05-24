@@ -37,6 +37,7 @@ function Chat() {
       if (savedSettings) {
         const parsed = JSON.parse(savedSettings)
         setApiKey(parsed.apiKey || 'AIzaSyDmZYG9_Qoego684v-mIyCXCjEHllBiUuY')
+        setApiUrl(parsed.apiUrl || 'https://generativelanguage.googleapis.com')
         if (parsed.model && (parsed.model.includes('gemini') || parsed.model.includes('exp'))) {
           // Auto-fix legacy experimental/Gemini IDs
           setModel('gpt5-4')

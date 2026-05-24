@@ -157,14 +157,28 @@ function Home() {
 
     setIsRefining(true)
     try {
+      // 炼金接口与“对话（Chat）”配置保持一致
+      let chatApiKey = ''
+      let chatApiUrl = 'https://generativelanguage.googleapis.com'
+      let chatModel = 'gpt5-4'
+      try {
+        const savedChatSettings = localStorage.getItem('banana_chat_api_settings')
+        if (savedChatSettings) {
+          const parsed = JSON.parse(savedChatSettings)
+          chatApiKey = parsed.apiKey || ''
+          chatApiUrl = parsed.apiUrl || 'https://generativelanguage.googleapis.com'
+          chatModel = parsed.model || 'gpt5-4'
+        }
+      } catch (e) {}
+
       const res = await fetch('/api/refine-prompt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt: textToRefine,
-          apiKey: apiKey,
-          apiUrl: apiUrl,
-          model: model
+          apiKey: chatApiKey,
+          apiUrl: chatApiUrl,
+          model: chatModel
         })
       })
 
@@ -229,14 +243,28 @@ function Home() {
 
     setCopilotLoading(true)
     try {
+      // 助手接口与“对话（Chat）”配置保持一致
+      let chatApiKey = ''
+      let chatApiUrl = 'https://generativelanguage.googleapis.com'
+      let chatModel = 'gpt5-4'
+      try {
+        const savedChatSettings = localStorage.getItem('banana_chat_api_settings')
+        if (savedChatSettings) {
+          const parsed = JSON.parse(savedChatSettings)
+          chatApiKey = parsed.apiKey || ''
+          chatApiUrl = parsed.apiUrl || 'https://generativelanguage.googleapis.com'
+          chatModel = parsed.model || 'gpt5-4'
+        }
+      } catch (e) {}
+
       const res = await fetch('/api/alchemy-chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: newHistory,
-          apiKey: apiKey,
-          apiUrl: apiUrl,
-          model: model
+          apiKey: chatApiKey,
+          apiUrl: chatApiUrl,
+          model: chatModel
         })
       })
       const data = await res.json()

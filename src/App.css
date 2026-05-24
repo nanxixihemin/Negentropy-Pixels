@@ -1010,6 +1010,11 @@ input:focus {
 }
 
 /* Yellow */
+.history-action-btn.rework:hover {
+  background: #34C759;
+}
+
+/* Green */
 
 /* Plaza */
 .plaza-slogan {
@@ -1215,6 +1220,31 @@ input:focus {
   box-shadow: 0px 0px 0px transparent;
   transform: translate(2px, 2px);
   /* Press effect */
+}
+
+.plaza-featured-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  background: var(--highlight);
+  color: var(--text-main);
+  border: 2px solid var(--border-color);
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  font-weight: 900;
+  box-shadow: 2px 2px 0px var(--border-color);
+  z-index: 9;
+}
+
+.admin-gallery-actions {
+  display: flex;
+  border-top: var(--border-width) solid var(--border-color);
+  background: var(--bg-card);
+}
+
+.admin-gallery-actions .history-action-btn {
+  min-height: 34px;
 }
 
 /* Modal */

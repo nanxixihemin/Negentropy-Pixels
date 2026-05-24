@@ -508,6 +508,54 @@ function Home() {
     }
   }
 
+  const reworkHistoryImage = (item) => {
+    if (!item || !item.url) return;
+    
+    if (item.url.startsWith('data:')) {
+      const parts = item.url.split(',');
+      if (parts.length === 2) {
+        const mimeType = parts[0].match(/data:(.*?);/)?.[1] || 'image/png';
+        const base64 = parts[1];
+        
+        setUploadedImage({
+          base64,
+          mimeType,
+          preview: item.url
+        });
+        setMode('img2img');
+        setActiveTab('create');
+        if (item.prompt) {
+          setPrompt(item.prompt);
+        }
+      }
+    } else {
+      fetch(item.url)
+        .then(res => res.blob())
+        .then(blob => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const dataUrl = reader.result;
+            const base64 = dataUrl.split(',')[1];
+            setUploadedImage({
+              base64,
+              mimeType: blob.type,
+              preview: dataUrl
+            });
+            setMode('img2img');
+            setActiveTab('create');
+            if (item.prompt) {
+              setPrompt(item.prompt);
+            }
+          };
+          reader.readAsDataURL(blob);
+        })
+        .catch(err => {
+          console.error("Failed to load image for rework", err);
+          alert("图片加载失败，请重试");
+        });
+    }
+  };
+
   // 保存昵称
   useEffect(() => {
     if (!authToken) {
@@ -1494,6 +1542,16 @@ function Home() {
                         title="删除"
                       >
                         删除
+                      </button>
+                      <button
+                        className="history-action-btn rework"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          reworkHistoryImage(item)
+                        }}
+                        title="返工 (图生图)"
+                      >
+                        返工
                       </button>
                       <button
                         className="history-action-btn share"

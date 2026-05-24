@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import '../App.css'
 
@@ -12,7 +12,7 @@ function Admin() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
 
-  const loadImages = async () => {
+  const loadImages = useCallback(async () => {
     if (!token) {
       setError('需要管理员登录')
       setLoading(false)
@@ -33,11 +33,11 @@ function Admin() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [token])
 
   useEffect(() => {
     loadImages()
-  }, [])
+  }, [loadImages])
 
   const toggleFeatured = async (item) => {
     try {

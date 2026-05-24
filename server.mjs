@@ -86,6 +86,43 @@ function publicGalleryItem(item) {
     };
 }
 
+function getImageExtension(contentType, fallback = 'png') {
+    const cleanType = String(contentType || '').split(';')[0].trim().toLowerCase();
+    if (cleanType === 'image/jpeg' || cleanType === 'image/jpg') return 'jpg';
+    if (cleanType === 'image/png') return 'png';
+    if (cleanType === 'image/webp') return 'webp';
+    if (cleanType === 'image/gif') return 'gif';
+    return fallback;
+}
+
+async function resolveImageBuffer(image) {
+    const dataUrlMatch = String(image || '').match(/^data:image\/([\w+.-]+);base64,(.+)$/);
+    if (dataUrlMatch) {
+        const ext = dataUrlMatch[1] === 'jpeg' ? 'jpg' : dataUrlMatch[1];
+        return {
+            ext,
+            buffer: Buffer.from(dataUrlMatch[2], 'base64')
+        };
+    }
+
+    if (/^https?:\/\//i.test(String(image || ''))) {
+        const imageRes = await fetch(image);
+        if (!imageRes.ok) {
+            throw new Error(`远程图片下载失败 (${imageRes.status})`);
+        }
+        const contentType = imageRes.headers.get('content-type') || 'image/png';
+        if (!contentType.startsWith('image/')) {
+            throw new Error(`远程地址不是图片内容: ${contentType}`);
+        }
+        return {
+            ext: getImageExtension(contentType),
+            buffer: Buffer.from(await imageRes.arrayBuffer())
+        };
+    }
+
+    throw new Error('无效的图片格式：仅支持 data:image base64 或 http(s) 图片地址');
+}
+
 // 通用 LLM 调用辅助函数 - 兼容 Gemini 和 OpenAI-compatible (GPT) 接口
 async function callLLMChat({ messages, apiKey, apiUrl, model }) {
     const isGemini = (!apiUrl || apiUrl.includes('googleapis.com') || (model && model.startsWith('gemini')));
@@ -324,7 +361,7 @@ async function callLLMImage({ prompt, apiKey, apiUrl, model, aspectRatio, qualit
             prompt: prompt,
             n: 1,
             size: size,
-            response_format: 'b64_json'
+            response_format: 'url'
         };
 
         let response = await fetch(endpoint, {
@@ -338,7 +375,7 @@ async function callLLMImage({ prompt, apiKey, apiUrl, model, aspectRatio, qualit
 
         let rawText = await response.text();
         if (!response.ok) {
-            // 如果是因为不支持 response_format: b64_json 报错，尝试不带该参数（返回 url）
+            // 如果是不支持 response_format 报错，尝试不带该参数（多数 OpenAI-compatible 生图接口会返回 URL）
             try {
                 const parsedErr = JSON.parse(rawText);
                 if (parsedErr.error?.message?.includes('response_format') || parsedErr.error?.includes('format')) {
@@ -380,18 +417,7 @@ async function callLLMImage({ prompt, apiKey, apiUrl, model, aspectRatio, qualit
         if (imgData.b64_json) {
             return `data:image/png;base64,${imgData.b64_json}`;
         } else if (imgData.url) {
-            // 服务端代理下载图片，避免前端跨域 (CORS) 或混淆内容阻止
-            try {
-                const imgRes = await fetch(imgData.url);
-                if (imgRes.ok) {
-                    const arrayBuffer = await imgRes.arrayBuffer();
-                    const base64 = Buffer.from(arrayBuffer).toString('base64');
-                    const contentType = imgRes.headers.get('content-type') || 'image/png';
-                    return `data:${contentType};base64,${base64}`;
-                }
-            } catch (e) {
-                console.error('Failed to download image URL, returning URL directly:', e);
-            }
+            // Return URL directly to avoid slow base64 transfer causing gateway timeouts.
             return imgData.url;
         }
 
@@ -641,6 +667,7 @@ const server = http.createServer(async (req, res) => {
                 return;
             }
 
+            const startedAt = Date.now();
             console.log(`[ImageGen] 开始生成图片, Model: ${model || 'default'}, ApiUrl: ${apiUrl || 'default'}`);
             const imageUrl = await callLLMImage({
                 prompt,
@@ -653,7 +680,7 @@ const server = http.createServer(async (req, res) => {
                 uploadedImage
             });
 
-            console.log('[ImageGen] 生图成功');
+            console.log(`[ImageGen] 生图成功，用时 ${Date.now() - startedAt}ms`);
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ imageUrl }));
         } catch (err) {
@@ -705,25 +732,16 @@ const server = http.createServer(async (req, res) => {
                 return;
             }
 
-            // 解析 base64 图片
-            const matches = image.match(/^data:image\/(\w+);base64,(.+)$/);
-            if (!matches) {
-                console.error('[API] 图片格式无效 (Expect data:image/...) startswith:', image.substring(0, 50));
-                res.writeHead(400, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ error: '无效的图片格式 (请确保图片加载完成)' }));
-                return;
-            }
-
-            const ext = matches[1] === 'jpeg' ? 'jpg' : matches[1];
-            const base64Data = matches[2];
-            console.log(`[API] 解析图片格式: ${ext}, 数据长度: ${base64Data.length}`);
-
+            // 解析 data URL 或远程图片 URL
+            const resolvedImage = await resolveImageBuffer(image);
+            const { ext, buffer } = resolvedImage;
+            console.log(`[API] Image resolved: ${ext}, bytes: ${buffer.length}`);
             const id = Date.now().toString();
             const filename = `${id}.${ext}`;
 
             // 保存图片文件
             console.log(`[API] 保存文件: ${filename}`);
-            fs.writeFileSync(path.join(GALLERY_DIR, filename), Buffer.from(base64Data, 'base64'));
+            fs.writeFileSync(path.join(GALLERY_DIR, filename), buffer);
 
             // 更新元数据
             galleryRepository.add({

@@ -5,11 +5,28 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { Buffer } from 'buffer';
 import 'dotenv/config';
+import { createGalleryRepository } from './server/repositories/galleryRepository.mjs';
+import { createImprintRepository } from './server/repositories/imprintRepository.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const PORT = 3031;
 const API_TARGET = 'https://generativelanguage.googleapis.com';
+const DATA_DIR = path.join(__dirname, 'server-data');
+const GALLERY_DIR = path.join(DATA_DIR, 'gallery');
+const GALLERY_META = path.join(DATA_DIR, 'gallery.json');
+const DATABASE_PATH = path.join(DATA_DIR, 'negentropy.db');
+const galleryRepository = createGalleryRepository({
+    dataDir: DATA_DIR,
+    dbPath: DATABASE_PATH,
+    legacyMetaPath: GALLERY_META,
+    maxItems: 100
+});
+const imprintRepository = createImprintRepository({
+    dataDir: DATA_DIR,
+    dbPath: DATABASE_PATH,
+    maxItems: 20
+});
 
 const MIME_TYPES = {
     '.html': 'text/html',
@@ -40,21 +57,32 @@ async function callLLMChat({ messages, apiKey, apiUrl, model }) {
         const apiPath = baseUrl.includes('/v1beta') ? '' : '/v1beta';
         const endpoint = `${baseUrl}${apiPath}/models/${modelName}:generateContent?key=${resolvedApiKey}`;
 
-        const contents = messages.map(msg => ({
-            role: msg.role === 'user' ? 'user' : 'model',
-            parts: [{ text: msg.content }]
-        }));
+        const systemMessage = messages.find(m => m.role === 'system');
+        const contents = messages
+            .filter(m => m.role !== 'system')
+            .map(msg => ({
+                role: msg.role === 'user' ? 'user' : 'model',
+                parts: [{ text: msg.content }]
+            }));
+
+        const requestBody = {
+            contents,
+            generationConfig: {
+                temperature: 0.7,
+                maxOutputTokens: 1000
+            }
+        };
+
+        if (systemMessage) {
+            requestBody.systemInstruction = {
+                parts: [{ text: systemMessage.content }]
+            };
+        }
 
         const response = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                contents,
-                generationConfig: {
-                    temperature: 0.7,
-                    maxOutputTokens: 1000
-                }
-            })
+            body: JSON.stringify(requestBody)
         });
 
         const data = await response.json();
@@ -436,7 +464,8 @@ const server = http.createServer(async (req, res) => {
 2. 即使已经有了初步构思，也要尝试追问。
 3. 当你觉得细节足够丰富，或者用户表示满意时，请输出最终提示词。
 4. 最终结果必须包裹在 <final_prompt> 标签中，例如: <final_prompt>A highly detailed oil painting of a cat...</final_prompt>。
-5. 最终提示词必须是英文。`;
+5. 最终提示词必须是英文。
+6. 禁止在对话中使用任何表情符号或图标。保持排版清爽干净，不需要使用 markdown 粗体、标题或分割线格式。`;
 
             const fullMessages = [
                 { role: "system", content: systemPrompt },
@@ -474,7 +503,18 @@ const server = http.createServer(async (req, res) => {
                 return;
             }
 
-            const reply = await callLLMChat({ messages, apiKey, apiUrl, model });
+            const systemPrompt = `你是一个友好、专业的创意和对话助手。请用清晰、自然、易读的纯文本回答用户，回答时应遵循以下严格规则：
+1. 禁止在回答中使用任何表情符号或图标（例如 🏫, 👥, ✏️, ✨, 🌸, 🚀 等）。
+2. 使用最基础的文字排版，禁止使用 Markdown 标题（如 #, ##, ### 等）、Markdown 分割线（如 --- 或 ***）或深层嵌套列表。
+3. 如果需要分段或列点，请直接使用普通的换行 and 数字（如 1. 2. 3.）或简单的连字符（-），保持排版极其清爽干净，适合直接阅读。
+4. 语气要诚恳、简洁，不要有过多废话，直接切入正题。`;
+
+            const messagesWithSystem = [
+                { role: 'system', content: systemPrompt },
+                ...messages
+            ];
+
+            const reply = await callLLMChat({ messages: messagesWithSystem, apiKey, apiUrl, model });
 
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ reply }));
@@ -530,18 +570,10 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ============ 共享画廊 API ============
-    const GALLERY_DIR = path.join(__dirname, 'server-data', 'gallery');
-    const GALLERY_META = path.join(__dirname, 'server-data', 'gallery.json');
 
     // 确保目录存在
-    if (!fs.existsSync(path.join(__dirname, 'server-data'))) {
-        fs.mkdirSync(path.join(__dirname, 'server-data'));
-    }
     if (!fs.existsSync(GALLERY_DIR)) {
-        fs.mkdirSync(GALLERY_DIR);
-    }
-    if (!fs.existsSync(GALLERY_META)) {
-        fs.writeFileSync(GALLERY_META, '[]');
+        fs.mkdirSync(GALLERY_DIR, { recursive: true });
     }
 
     // POST /api/share - 分享图片到广场
@@ -592,8 +624,7 @@ const server = http.createServer(async (req, res) => {
             fs.writeFileSync(path.join(GALLERY_DIR, filename), Buffer.from(base64Data, 'base64'));
 
             // 更新元数据
-            const meta = JSON.parse(fs.readFileSync(GALLERY_META, 'utf-8'));
-            meta.unshift({
+            galleryRepository.add({
                 id,
                 filename,
                 prompt: prompt || '',
@@ -602,9 +633,6 @@ const server = http.createServer(async (req, res) => {
                 caption: caption || null,
                 timestamp: Date.now()
             });
-            // 限制最多保存 100 张
-            if (meta.length > 100) meta.pop();
-            fs.writeFileSync(GALLERY_META, JSON.stringify(meta, null, 2));
 
             console.log('[API] 分享成功');
             res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -623,7 +651,7 @@ const server = http.createServer(async (req, res) => {
     // GET /api/gallery - 获取共享图片列表
     if (req.url === '/api/gallery' && req.method === 'GET') {
         try {
-            const meta = JSON.parse(fs.readFileSync(GALLERY_META, 'utf-8'));
+            const meta = galleryRepository.list();
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify(meta));
         } catch (err) {
@@ -648,16 +676,13 @@ const server = http.createServer(async (req, res) => {
             const { deviceId } = JSON.parse(body);
 
             // 读取元数据
-            const meta = JSON.parse(fs.readFileSync(GALLERY_META, 'utf-8'));
-            const itemIndex = meta.findIndex(item => item.id === idToDelete);
+            const item = galleryRepository.findById(idToDelete);
 
-            if (itemIndex === -1) {
+            if (!item) {
                 res.writeHead(404);
                 res.end(JSON.stringify({ error: '图片不存在' }));
                 return;
             }
-
-            const item = meta[itemIndex];
 
             // 验证设备ID
             if (item.deviceId !== deviceId) {
@@ -673,14 +698,96 @@ const server = http.createServer(async (req, res) => {
             }
 
             // 更新元数据
-            meta.splice(itemIndex, 1);
-            fs.writeFileSync(GALLERY_META, JSON.stringify(meta, null, 2));
+            galleryRepository.deleteById(idToDelete);
 
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ success: true }));
         } catch (err) {
             console.error('删除错误:', err);
             res.writeHead(500);
+            res.end(JSON.stringify({ error: err.message }));
+        }
+        return;
+    }
+
+    // ============ 个人印记 (Imprints) API ============
+    // GET /api/imprints?deviceId=... - 获取个人历史印记
+    if (req.url.startsWith('/api/imprints') && req.method === 'GET') {
+        try {
+            const urlObj = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+            const deviceId = urlObj.searchParams.get('deviceId');
+            if (!deviceId) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: '缺少 deviceId' }));
+                return;
+            }
+            const list = imprintRepository.list(deviceId);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(list));
+        } catch (err) {
+            console.error('[Imprints GET] 错误:', err);
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err.message }));
+        }
+        return;
+    }
+
+    // POST /api/imprints - 保存/更新历史印记
+    if (req.url === '/api/imprints' && req.method === 'POST') {
+        try {
+            const chunks = [];
+            for await (const chunk of req) {
+                chunks.push(chunk);
+            }
+            const body = JSON.parse(Buffer.concat(chunks).toString());
+            const { id, url, prompt, deviceId, timestamp } = body;
+
+            if (!id || !url || !deviceId) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: '缺少必要参数 (id, url, deviceId)' }));
+                return;
+            }
+
+            const item = imprintRepository.add({ id, url, prompt, deviceId, timestamp });
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, item }));
+        } catch (err) {
+            console.error('[Imprints POST] 错误:', err);
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err.message }));
+        }
+        return;
+    }
+
+    // DELETE /api/imprints/:id - 删除历史印记
+    const deleteImprintMatch = req.url.match(/^\/api\/imprints\/([a-zA-Z0-9_-]+)$/);
+    if (deleteImprintMatch && req.method === 'DELETE') {
+        try {
+            const idToDelete = deleteImprintMatch[1];
+            const chunks = [];
+            for await (const chunk of req) {
+                chunks.push(chunk);
+            }
+            const body = JSON.parse(Buffer.concat(chunks).toString());
+            const { deviceId } = body;
+
+            if (!deviceId) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: '缺少 deviceId' }));
+                return;
+            }
+
+            const success = imprintRepository.deleteById(idToDelete, deviceId);
+            if (success) {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true }));
+            } else {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: '印记不存在或无权删除' }));
+            }
+        } catch (err) {
+            console.error('[Imprints DELETE] 错误:', err);
+            res.writeHead(500, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: err.message }));
         }
         return;

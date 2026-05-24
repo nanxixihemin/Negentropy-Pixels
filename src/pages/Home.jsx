@@ -48,6 +48,24 @@ const AVAILABLE_MODELS = [
   { id: 'custom', label: '自定义模型...' }
 ]
 
+const HISTORY_STORAGE_KEY = 'banana_home_history'
+const LEGACY_HISTORY_STORAGE_KEY = 'banana_history'
+
+function readLocalHistory() {
+  try {
+    const saved = localStorage.getItem(HISTORY_STORAGE_KEY) || localStorage.getItem(LEGACY_HISTORY_STORAGE_KEY)
+    return saved ? JSON.parse(saved) : []
+  } catch (e) {
+    console.error('Failed to parse history', e)
+    return []
+  }
+}
+
+function saveLocalHistory(history) {
+  localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(history.slice(0, 20)))
+  localStorage.removeItem(LEGACY_HISTORY_STORAGE_KEY)
+}
+
 function Home() {
   const navigate = useNavigate()
   const [prompt, setPrompt] = useState('')
@@ -56,7 +74,7 @@ function Home() {
   const [error, setError] = useState(null)
   const [mode, setMode] = useState('text2img') // 'text2img' | 'img2img'
   const [uploadedImage, setUploadedImage] = useState(null) // { base64, mimeType, preview }
-  const [history, setHistory] = useState([])
+  const [history, setHistory] = useState(() => readLocalHistory())
 
   // 创作增强功能状态
   const [selectedStyle, setSelectedStyle] = useState(null)
@@ -87,8 +105,7 @@ function Home() {
   // Save History (Limit to 20 items to avoid quota issues with base64)
   useEffect(() => {
     try {
-      const historyToSave = history.slice(0, 20);
-      localStorage.setItem('banana_home_history', JSON.stringify(historyToSave));
+      saveLocalHistory(history);
     } catch (e) {
       console.warn('Storage quota exceeded, could not save history');
     }
@@ -107,13 +124,6 @@ function Home() {
 
     const savedQuality = localStorage.getItem('banana_home_quality')
     if (savedQuality) setQuality(savedQuality)
-
-    const savedHistory = localStorage.getItem('banana_home_history')
-    if (savedHistory) {
-      try {
-        setHistory(JSON.parse(savedHistory))
-      } catch (e) { console.error('Failed to parse history', e) }
-    }
 
     // Auto-migrate invalid model ID
     const savedModel = localStorage.getItem('banana_home_model_id')
@@ -418,7 +428,7 @@ function Home() {
   const addToHistory = (imageUrl, promptText) => {
     try {
       const newItem = {
-        id: Date.now(),
+        id: Date.now().toString(),
         url: imageUrl,
         prompt: promptText,
         timestamp: Date.now()
@@ -426,9 +436,10 @@ function Home() {
 
       setHistory(prev => {
         const newHistory = [newItem, ...prev].slice(0, 20) // Limit to 20 items
-        localStorage.setItem('banana_history', JSON.stringify(newHistory))
+        saveLocalHistory(newHistory)
         return newHistory
       })
+      saveImprintToDatabase(newItem)
     } catch (e) {
       if (e.name === 'QuotaExceededError') {
         alert("本地存储空间已满，无法保存新图片，请删除一些旧记录。")
@@ -441,9 +452,10 @@ function Home() {
   const removeFromHistory = (id) => {
     setHistory(prev => {
       const newHistory = prev.filter(item => item.id !== id)
-      localStorage.setItem('banana_history', JSON.stringify(newHistory))
+      saveLocalHistory(newHistory)
       return newHistory
     })
+    deleteImprintFromDatabase(id)
   }
 
   // Plaza (共享画廊) 状态
@@ -473,6 +485,75 @@ function Home() {
     }
     setDeviceId(savedDeviceId)
   }, [])
+
+  useEffect(() => {
+    if (!deviceId) return
+
+    let cancelled = false
+
+    const loadImprints = async () => {
+      try {
+        const res = await fetch(`/api/imprints?deviceId=${encodeURIComponent(deviceId)}`)
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || '加载印记失败')
+
+        if (cancelled || !Array.isArray(data)) return
+
+        if (data.length > 0) {
+          setHistory(data)
+          saveLocalHistory(data)
+          return
+        }
+
+        const localHistory = readLocalHistory().slice(0, 20)
+        if (localHistory.length > 0) {
+          await Promise.all(localHistory.map(item => saveImprintToDatabase(item, deviceId)))
+        }
+      } catch (e) {
+        console.warn('Failed to load imprints from database', e)
+      }
+    }
+
+    loadImprints()
+
+    return () => {
+      cancelled = true
+    }
+  }, [deviceId])
+
+  const saveImprintToDatabase = async (item, targetDeviceId = deviceId) => {
+    if (!targetDeviceId || !item?.id || !item?.url) return
+
+    try {
+      await fetch('/api/imprints', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: item.id,
+          url: item.url,
+          prompt: item.prompt || '',
+          deviceId: targetDeviceId,
+          timestamp: item.timestamp || Date.now()
+        })
+      })
+    } catch (e) {
+      console.warn('Failed to save imprint to database', e)
+    }
+  }
+
+  const deleteImprintFromDatabase = async (id) => {
+    if (!deviceId) return
+
+    try {
+      await fetch(`/api/imprints/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deviceId })
+      })
+    } catch (e) {
+      console.warn('Failed to delete imprint from database', e)
+    }
+  }
 
   // 保存昵称
   const saveNickname = (name) => {

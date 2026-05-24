@@ -174,54 +174,18 @@ function Chat() {
 
     try {
       let data;
-
-      // Check if using Google AI Studio (Gemini) handling
-      if (apiUrl.includes('googleapis.com')) {
-        // If targeting Google API (default or explicit), use relative path to leverage our server proxy
-        const baseUrl = ''
-        // Server will inject key, so we don't need it here
-        const endpoint = `/v1beta/models/${model}:generateContent`
-
-        // Convert history to Gemini format
-        const contents = updatedMessages.map(m => ({
-          role: m.role === 'user' ? 'user' : 'model',
-          parts: [{ text: m.content }]
-        }))
-
-        const res = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contents })
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: updatedMessages,
+          apiKey: apiKey,
+          apiUrl: apiUrl,
+          model: model
         })
-
-        data = await res.json()
-
-        if (!res.ok) {
-          // Improve error message visibility
-          const errorDetails = data.error?.message || data.error?.status || res.statusText
-          throw new Error(`Gemini API Error: ${errorDetails}`)
-        }
-
-        // Extract response
-        const reply = data.candidates?.[0]?.content?.parts?.[0]?.text || "No response"
-        // Normalize for our app
-        data = { reply }
-
-      } else {
-        // Fallback to OpenAI-compatible logic (or local proxy)
-        const res = await fetch('/api/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            messages: updatedMessages,
-            apiKey: apiKey,
-            apiUrl: apiUrl,
-            model: model
-          })
-        })
-        data = await res.json()
-        if (!res.ok) throw new Error(data.error || 'Request failed')
-      }
+      })
+      data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Request failed')
 
       const aiMsg = { role: 'model', content: data.reply }
       const finalMessages = [...updatedMessages, aiMsg]

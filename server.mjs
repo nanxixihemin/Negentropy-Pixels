@@ -316,6 +316,8 @@ async function callLLMImage({ prompt, apiKey, apiUrl, model, aspectRatio, qualit
         let size = '1024x1024';
         if (aspectRatio === '16:9') size = '1024x768';
         else if (aspectRatio === '9:16') size = '768x1024';
+        else if (aspectRatio === '4:3') size = '1024x768';
+        else if (aspectRatio === '3:4') size = '768x1024';
 
         const requestBody = {
             model: modelName,

@@ -324,35 +324,15 @@ body {
 }
 
 @media (max-width: 580px) {
-  .header-top-row {
-    flex-direction: column;
-    gap: var(--s-3);
-    text-align: center;
+  .settings-btn-text {
+    display: none;
   }
-  .header-controls {
+  .settings-btn {
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border-radius: 50%;
     justify-content: center;
-    width: 100%;
-  }
-  .manifesto-container {
-    text-align: center;
-    padding-right: 0;
-    margin-top: 12px;
-    margin-bottom: 8px;
-  }
-  .manifesto-main {
-    text-align: center;
-  }
-  .manifesto-sub {
-    text-align: center;
-  }
-  .manifesto-footer {
-    flex-direction: column;
-    gap: 8px;
-    align-items: center;
-    margin-top: 16px;
-  }
-  .manifesto-caption {
-    text-align: center;
   }
 }
 

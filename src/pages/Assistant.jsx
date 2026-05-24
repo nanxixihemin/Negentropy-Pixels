@@ -102,6 +102,59 @@ function Assistant() {
         return text.replace(/<final_prompt>[\s\S]*?<\/final_prompt>/i, '').trim();
     }
 
+    const formatMessageContent = (content) => {
+        if (!content) return '';
+        const cleaned = cleanContent(content);
+        const lines = cleaned.split('\n');
+        return lines.map((line, lineIdx) => {
+            let cleanLine = line;
+            
+            // Check if it's a separator
+            if (/^---+\s*$/.test(cleanLine)) {
+                return <hr key={lineIdx} style={{ margin: '12px 0', border: 'none', borderTop: '1px solid rgba(0,0,0,0.1)' }} />;
+            }
+            
+            // Check if it's a heading like ### text or ## text
+            const headingMatch = cleanLine.match(/^(#{1,6})\s+(.+)$/);
+            let isHeading = false;
+            let headingLevel = 0;
+            if (headingMatch) {
+                headingLevel = headingMatch[1].length;
+                cleanLine = headingMatch[2];
+                isHeading = true;
+            }
+            
+            // Process bold text like **bold** -> <strong>bold</strong>
+            const parts = [];
+            let lastIdx = 0;
+            const boldRegex = /\*\*([^*]+)\*\*/g;
+            let match;
+            while ((match = boldRegex.exec(cleanLine)) !== null) {
+                if (match.index > lastIdx) {
+                    parts.push(cleanLine.substring(lastIdx, match.index));
+                }
+                parts.push(<strong key={match.index}>{match[1]}</strong>);
+                lastIdx = boldRegex.lastIndex;
+            }
+            if (lastIdx < cleanLine.length) {
+                parts.push(cleanLine.substring(lastIdx));
+            }
+            
+            // Render
+            if (isHeading) {
+                if (headingLevel === 1) return <h1 key={lineIdx} style={{ margin: '10px 0 6px 0', fontSize: '1.4rem', fontWeight: 800 }}>{parts}</h1>;
+                if (headingLevel === 2) return <h2 key={lineIdx} style={{ margin: '8px 0 5px 0', fontSize: '1.2rem', fontWeight: 700 }}>{parts}</h2>;
+                return <h3 key={lineIdx} style={{ margin: '6px 0 4px 0', fontSize: '1.05rem', fontWeight: 700 }}>{parts}</h3>;
+            }
+            
+            return (
+                <div key={lineIdx} style={{ minHeight: '1.2em' }}>
+                    {parts}
+                </div>
+            );
+        });
+    }
+
     const finish = () => {
         const newMsg = { role: 'user', content: '请直接输出最终的成品提示词，不要再问问题了。请用 <final_prompt> 标签包裹。' } // System instruction hidden or shown? Better to just show "Finish" or similar in UI but send this.
         // Actually, let's just trigger it directly.
@@ -124,7 +177,7 @@ function Assistant() {
                 {messages.map((msg, i) => (
                     <div key={i} className={`chat-message ${msg.role}`}>
                         <div className="message-bubble">
-                            {cleanContent(msg.content)}
+                            {formatMessageContent(msg.content)}
 
                             {msg.role === 'assistant' && msg.content.includes('<final_prompt>') && (
                                 <div className="result-block">

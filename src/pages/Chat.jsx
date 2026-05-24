@@ -215,9 +215,62 @@ function Chat() {
       setIsLoading(false)
     }
   }
-
   // Mobile Sidebar Toggle
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+
+  const formatMessageContent = (content) => {
+    if (!content) return '';
+    
+    // Split content by newlines
+    const lines = content.split('\n');
+    return lines.map((line, lineIdx) => {
+      let cleanLine = line;
+      
+      // Check if it's a separator
+      if (/^---+\s*$/.test(cleanLine)) {
+        return <hr key={lineIdx} style={{ margin: '12px 0', border: 'none', borderTop: '1px solid rgba(0,0,0,0.1)' }} />;
+      }
+      
+      // Check if it's a heading like ### text or ## text
+      const headingMatch = cleanLine.match(/^(#{1,6})\s+(.+)$/);
+      let isHeading = false;
+      let headingLevel = 0;
+      if (headingMatch) {
+        headingLevel = headingMatch[1].length;
+        cleanLine = headingMatch[2];
+        isHeading = true;
+      }
+      
+      // Process bold text like **bold** -> <strong>bold</strong>
+      const parts = [];
+      let lastIdx = 0;
+      const boldRegex = /\*\*([^*]+)\*\*/g;
+      let match;
+      while ((match = boldRegex.exec(cleanLine)) !== null) {
+        if (match.index > lastIdx) {
+          parts.push(cleanLine.substring(lastIdx, match.index));
+        }
+        parts.push(<strong key={match.index}>{match[1]}</strong>);
+        lastIdx = boldRegex.lastIndex;
+      }
+      if (lastIdx < cleanLine.length) {
+        parts.push(cleanLine.substring(lastIdx));
+      }
+      
+      // Render
+      if (isHeading) {
+        if (headingLevel === 1) return <h1 key={lineIdx} style={{ margin: '10px 0 6px 0', fontSize: '1.4rem', fontWeight: 800 }}>{parts}</h1>;
+        if (headingLevel === 2) return <h2 key={lineIdx} style={{ margin: '8px 0 5px 0', fontSize: '1.2rem', fontWeight: 700 }}>{parts}</h2>;
+        return <h3 key={lineIdx} style={{ margin: '6px 0 4px 0', fontSize: '1.05rem', fontWeight: 700 }}>{parts}</h3>;
+      }
+      
+      return (
+        <div key={lineIdx} style={{ minHeight: '1.2em' }}>
+          {parts}
+        </div>
+      );
+    });
+  };
 
   return (
     <div className="chat-page-container">
@@ -289,7 +342,7 @@ function Chat() {
           <div className="chat-messages" ref={scrollRef}>
             {messages.map((msg, idx) => (
               <div key={idx} className={`chat-bubble ${msg.role}`}>
-                {msg.content}
+                {formatMessageContent(msg.content)}
               </div>
             ))}
             {isLoading && <div className="chat-bubble model loading">AI 正在思考...</div>}

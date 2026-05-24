@@ -1488,6 +1488,7 @@ input:focus {
   line-height: 1.5;
   max-width: 85%;
   word-wrap: break-word;
+  white-space: pre-wrap;
 }
 
 .chat-bubble.user {
@@ -2098,6 +2099,7 @@ input:focus {
   position: relative;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
   word-wrap: break-word;
+  white-space: pre-wrap;
 }
 
 .chat-message.user .message-bubble {

@@ -195,9 +195,13 @@ async function callLLMChat({ messages, apiKey, apiUrl, model }) {
         if (reply === undefined || reply === null) {
             const apiError = data.error?.message || data.error || data.message || data.msg;
             if (apiError) {
-                throw new Error(`API 错误: ${JSON.stringify(apiError)}`);
+                const cleanErr = typeof apiError === 'object' ? JSON.stringify(apiError) : apiError;
+                throw new Error(`API 服务商返回了错误: ${cleanErr}`);
             }
-            throw new Error(`未在 GPT 响应中找到文本数据。原始响应: ${rawText.substring(0, 200)}`);
+            if (data.choices === null || (Array.isArray(data.choices) && data.choices.length === 0)) {
+                throw new Error(`⚠️ API 响应异常 (Choices 为空)。\n\n这通常是由于当前调用的模型（${modelName}）临时拥堵、扣费失败，或当前节点不支持该模型。\n\n💡 建议方法：请点击右上角的 ⚙️ 设置按钮，在 Base URL 中切换为其他 API 地址（如 蜂蜜AI https://store.hachimi-ai.com）或在下方选择更换其他高可用模型（如 gpt5-4 / Qwen3_6）再试。`);
+            }
+            throw new Error(`⚠️ API 响应格式异常。\n\n请检查您配置的“API Base URL”、“API Key”以及“模型名称”是否完全匹配。`);
         }
         return reply;
     }

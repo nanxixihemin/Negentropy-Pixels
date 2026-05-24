@@ -571,102 +571,40 @@ function Home() {
     setImageUrl(null)
 
     try {
-      // API via same origin (served together)
-      // API Endpoint Logic
-      // If apiUrl is default (Google) or empty, use relative path to leverage server proxy
-      // If apiUrl is a custom absolute URL (e.g. another proxy), use it directly
-      let baseUrl = ''
-      if (apiUrl && !apiUrl.includes('googleapis.com') && apiUrl.startsWith('http')) {
-        baseUrl = apiUrl.replace(/\/$/, '') // Remove trailing slash
-      }
-
-      // Ensure endpoint construction handles typical custom proxy paths vs official paths
-      let genaiEndpoint;
-      if (baseUrl) {
-        // Custom proxy logic
-        genaiEndpoint = `${baseUrl}/v1beta/models/${model}:generateContent`;
-        // Only append key if present for external URLs (non-proxy)
-        if (apiKey) genaiEndpoint += `?key=${apiKey}`;
-      } else {
-        // Default: Relative path to our server proxy (Server injects key)
-        genaiEndpoint = `/v1beta/models/${model}:generateContent`;
-      }
-
-      // Build parts array based on mode
-      const parts = []
       let finalPrompt = getFinalPrompt()
 
-      // Append Aspect Ratio text description for models that support it via prompt
-      // or simply to guide the style
       if (aspectRatio !== '1:1') {
         finalPrompt += `, aspect ratio ${aspectRatio}`
       }
 
-      if (mode === 'img2img' && uploadedImage) {
-        parts.push({
-          inlineData: {
-            mimeType: uploadedImage.mimeType,
-            data: uploadedImage.base64
-          }
-        })
-      }
-      parts.push({ text: finalPrompt })
-
-      const response = await fetch(genaiEndpoint, {
+      const response = await fetch('/api/generate-image', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'ngrok-skip-browser-warning': 'true'
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          contents: [
-            {
-              role: "user",
-              parts
-            }
-          ]
+          prompt: finalPrompt,
+          model,
+          apiUrl,
+          apiKey,
+          aspectRatio,
+          quality,
+          mode,
+          uploadedImage
         })
       })
 
+      const data = await response.json().catch(() => ({}))
       if (!response.ok) {
-        const errData = await response.json().catch(() => ({}))
-        throw new Error(errData.error?.message || `API Error: ${response.statusText}`)
+        throw new Error(data.error || `生图失败: ${response.statusText}`)
       }
 
-      const data = await response.json()
-
-      // Extract image from Google GenAI response format
-      let url = null
-      const candidates = data.candidates || []
-
-      for (const candidate of candidates) {
-        const parts = candidate.content?.parts || []
-        for (const part of parts) {
-          if (part.inlineData && part.inlineData.mimeType.startsWith('image/')) {
-            // Construct data URL
-            url = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`
-            break
-          }
-          // Some models might return fileUri or different format (e.g. Imagen)
-          // Handle standard text response as fallback? No, we expect image.
-        }
-        if (url) break
-      }
-
-      if (!url) {
-        // Fallback or error if no image found (maybe text returned)
-        const textPart = candidates[0]?.content?.parts?.[0]?.text
-        if (textPart) {
-          throw new Error(`生成失败，模型返回了文本而非图片: "${textPart.substring(0, 50)}..."`)
-        }
+      if (!data.imageUrl) {
         throw new Error('未在响应中找到图片数据')
       }
 
-      setImageUrl(url)
-      // Save original prompt (without style suffix for display?) or with? 
-      // Usually user wants to see what they typed, but maybe saving full prompt is better for reproducibility.
-      // Let's save the final prompt.
-      addToHistory(url, finalPrompt)
+      setImageUrl(data.imageUrl)
+      addToHistory(data.imageUrl, finalPrompt)
     } catch (err) {
       console.error(err)
       setError(err.message)
@@ -1451,8 +1389,7 @@ function Home() {
       }
 
       <footer className="app-footer">
-        Powered by Banana Pro & Google Antigravity
-
+        采用最强的生图模型
       </footer>
     </div >
   )

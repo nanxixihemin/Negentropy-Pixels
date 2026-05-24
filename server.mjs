@@ -123,6 +123,182 @@ async function callLLMChat({ messages, apiKey, apiUrl, model }) {
     }
 }
 
+// 通用 AI 生图辅助函数 - 兼容 Gemini 和 OpenAI-compatible (GPT) 生图接口
+async function callLLMImage({ prompt, apiKey, apiUrl, model, aspectRatio, quality, mode, uploadedImage }) {
+    const isGemini = (!apiUrl || apiUrl.includes('googleapis.com') || (model && model.includes('gemini')));
+
+    if (isGemini) {
+        const resolvedApiKey = apiKey || process.env.GEMINI_API_KEY;
+        if (!resolvedApiKey) {
+            throw new Error('未配置 Gemini API Key');
+        }
+
+        let baseUrl = 'https://generativelanguage.googleapis.com';
+        if (apiUrl && apiUrl.startsWith('http')) {
+            baseUrl = apiUrl.replace(/\/$/, '');
+        }
+
+        const modelName = model || 'gemini-3-pro-image-preview';
+        const apiPath = baseUrl.includes('/v1beta') ? '' : '/v1beta';
+        const endpoint = `${baseUrl}${apiPath}/models/${modelName}:generateContent?key=${resolvedApiKey}`;
+
+        const parts = [];
+        if (mode === 'img2img' && uploadedImage) {
+            parts.push({
+                inlineData: {
+                    mimeType: uploadedImage.mimeType,
+                    data: uploadedImage.base64
+                }
+            });
+        }
+        parts.push({ text: prompt });
+
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{ role: 'user', parts }]
+            })
+        });
+
+        const rawText = await response.text();
+        if (!response.ok) {
+            let errDetail = rawText;
+            try {
+                const parsed = JSON.parse(rawText);
+                errDetail = parsed.error?.message || parsed.error || rawText;
+            } catch (e) {}
+            throw new Error(`Gemini API Error (${response.status}): ${errDetail}`);
+        }
+
+        let data;
+        try {
+            data = JSON.parse(rawText);
+        } catch (e) {
+            throw new Error(`Gemini API 返回非 JSON 格式数据: ${rawText.substring(0, 100)}`);
+        }
+
+        let url = null;
+        const candidates = data.candidates || [];
+        for (const candidate of candidates) {
+            const parts = candidate.content?.parts || [];
+            for (const part of parts) {
+                if (part.inlineData && part.inlineData.mimeType.startsWith('image/')) {
+                    url = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+                    break;
+                }
+            }
+            if (url) break;
+        }
+
+        if (!url) {
+            const textPart = candidates[0]?.content?.parts?.[0]?.text;
+            if (textPart) {
+                throw new Error(`生成失败，模型返回了文本而非图片: "${textPart.substring(0, 50)}..."`);
+            }
+            throw new Error('未在响应中找到图片数据');
+        }
+        return url;
+    } else {
+        const resolvedApiKey = apiKey || process.env.GPT_API_KEY || process.env.SILICON_API_KEY;
+        const resolvedApiUrl = apiUrl || 'https://api.siliconflow.cn/v1';
+        const modelName = model || 'gpt-image2';
+
+        if (!resolvedApiKey) {
+            throw new Error('未配置 API Key');
+        }
+
+        let endpoint = resolvedApiUrl;
+        if (!endpoint.endsWith('/images/generations')) {
+            endpoint = endpoint.replace(/\/$/, '') + '/images/generations';
+        }
+
+        // 尝试映射宽高比，虽然很多自定义 OpenAI-compatible 生图接口直接通过 prompt 接收比例，但这里保留标准尺寸映射
+        let size = '1024x1024';
+        if (aspectRatio === '16:9') size = '1024x768';
+        else if (aspectRatio === '9:16') size = '768x1024';
+
+        const requestBody = {
+            model: modelName,
+            prompt: prompt,
+            n: 1,
+            size: size,
+            response_format: 'b64_json'
+        };
+
+        let response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${resolvedApiKey}`
+            },
+            body: JSON.stringify(requestBody)
+        });
+
+        let rawText = await response.text();
+        if (!response.ok) {
+            // 如果是因为不支持 response_format: b64_json 报错，尝试不带该参数（返回 url）
+            try {
+                const parsedErr = JSON.parse(rawText);
+                if (parsedErr.error?.message?.includes('response_format') || parsedErr.error?.includes('format')) {
+                    delete requestBody.response_format;
+                    response = await fetch(endpoint, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${resolvedApiKey}`
+                        },
+                        body: JSON.stringify(requestBody)
+                    });
+                    rawText = await response.text();
+                }
+            } catch (e) {}
+
+            if (!response.ok) {
+                let errDetail = rawText;
+                try {
+                    const parsed = JSON.parse(rawText);
+                    errDetail = parsed.error?.message || parsed.error || rawText;
+                } catch (e) {}
+                throw new Error(`GPT Image API Error (${response.status}): ${errDetail}`);
+            }
+        }
+
+        let data;
+        try {
+            data = JSON.parse(rawText);
+        } catch (e) {
+            throw new Error(`GPT Image API 返回非 JSON 格式数据: ${rawText.substring(0, 100)}`);
+        }
+
+        const imgData = data.data?.[0];
+        if (!imgData) {
+            throw new Error('未在 GPT Image 响应中找到图片数据');
+        }
+
+        if (imgData.b64_json) {
+            return `data:image/png;base64,${imgData.b64_json}`;
+        } else if (imgData.url) {
+            // 服务端代理下载图片，避免前端跨域 (CORS) 或混淆内容阻止
+            try {
+                const imgRes = await fetch(imgData.url);
+                if (imgRes.ok) {
+                    const arrayBuffer = await imgRes.arrayBuffer();
+                    const base64 = Buffer.from(arrayBuffer).toString('base64');
+                    const contentType = imgRes.headers.get('content-type') || 'image/png';
+                    return `data:${contentType};base64,${base64}`;
+                }
+            } catch (e) {
+                console.error('Failed to download image URL, returning URL directly:', e);
+            }
+            return imgData.url;
+        }
+
+        throw new Error('GPT Image 响应中缺少 b64_json 或 url');
+    }
+}
+
+
 const server = http.createServer(async (req, res) => {
     // 添加 CORS 头
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -289,6 +465,46 @@ const server = http.createServer(async (req, res) => {
             res.end(JSON.stringify({ error: error.message || '服务器错误' }));
             return;
         }
+    }
+
+    // --- AI Image Generation Route ---
+    if (req.url === '/api/generate-image' && req.method === 'POST') {
+        console.log('[ImageGen] 收到生图请求');
+        try {
+            const chunks = [];
+            for await (const chunk of req) {
+                chunks.push(chunk);
+            }
+            const body = JSON.parse(Buffer.concat(chunks).toString());
+            const { prompt, model, apiUrl, apiKey, aspectRatio, quality, mode, uploadedImage } = body;
+
+            if (!prompt) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: '请输入提示词' }));
+                return;
+            }
+
+            console.log(`[ImageGen] 开始生成图片, Model: ${model || 'default'}, ApiUrl: ${apiUrl || 'default'}`);
+            const imageUrl = await callLLMImage({
+                prompt,
+                model,
+                apiUrl,
+                apiKey,
+                aspectRatio,
+                quality,
+                mode,
+                uploadedImage
+            });
+
+            console.log('[ImageGen] 生图成功');
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ imageUrl }));
+        } catch (err) {
+            console.error('[ImageGen] 内部错误:', err);
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err.message || '生图失败' }));
+        }
+        return;
     }
 
     // ============ 共享画廊 API ============

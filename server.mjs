@@ -1110,6 +1110,10 @@ const server = http.createServer(async (req, res) => {
     });
 });
 
+server.timeout = 300000;
+server.keepAliveTimeout = 300000;
+server.headersTimeout = 305000;
+
 server.listen(PORT, '0.0.0.0', () => {
     console.log('🌌 Negentropy Server Started!');
     console.log(`📍 本地访问: http://localhost:${PORT}`);

@@ -69,7 +69,10 @@ async function callLLMChat({ messages, apiKey, apiUrl, model }) {
     } else {
         const resolvedApiKey = apiKey || process.env.GPT_API_KEY || process.env.SILICON_API_KEY;
         const resolvedApiUrl = apiUrl || process.env.GPT_API_URL || 'https://api.siliconflow.cn/v1';
-        const modelName = model || process.env.GPT_MODEL_NAME || 'deepseek-ai/DeepSeek-V3';
+        let modelName = model || process.env.GPT_MODEL_NAME || 'deepseek-ai/DeepSeek-V3';
+        if (modelName === 'gpt-image2' || modelName === 'gpt-image-2') {
+            modelName = 'gpt5-4'; // Fallback to chat model for refinement/dialogues
+        }
 
         if (!resolvedApiKey) {
             throw new Error('未配置 API Key');
@@ -202,7 +205,10 @@ async function callLLMImage({ prompt, apiKey, apiUrl, model, aspectRatio, qualit
     } else {
         const resolvedApiKey = apiKey || process.env.GPT_API_KEY || process.env.SILICON_API_KEY;
         const resolvedApiUrl = apiUrl || 'https://api.siliconflow.cn/v1';
-        const modelName = model || 'gpt-image2';
+        let modelName = model || 'gpt-image-2';
+        if (modelName === 'gpt-image2') {
+            modelName = 'gpt-image-2';
+        }
 
         if (!resolvedApiKey) {
             throw new Error('未配置 API Key');

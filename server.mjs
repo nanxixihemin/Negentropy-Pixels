@@ -124,7 +124,11 @@ async function callLLMChat({ messages, apiKey, apiUrl, model }) {
 
         const reply = data.choices?.[0]?.message?.content?.trim();
         if (reply === undefined || reply === null) {
-            throw new Error('未在 GPT 响应中找到文本数据');
+            const apiError = data.error?.message || data.error || data.message || data.msg;
+            if (apiError) {
+                throw new Error(`API 错误: ${JSON.stringify(apiError)}`);
+            }
+            throw new Error(`未在 GPT 响应中找到文本数据。原始响应: ${rawText.substring(0, 200)}`);
         }
         return reply;
     }

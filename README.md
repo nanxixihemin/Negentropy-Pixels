@@ -8,35 +8,35 @@ An elegant, high-performance, full-stack AI conversation and image generation we
 
 ## ✨ Key Features (核心特性)
 
-### 💬 AI Chat & Alchemy (AI 对话与“勾勒”)
+### AI Chat & Alchemy (AI 对话与“勾勒”)
 - **Multi-Model Support**: Switch between Gemini (official API) and OpenAI-compatible endpoints (e.g. SiliconFlow, DeepSeek, etc.) dynamically.
 - **SQLite Session Persistence**: All conversation histories and message streams are persisted securely in a local SQLite database, replacing ephemeral browser storage.
 - **Auto-Naming Sessions**: Conversation sessions automatically rename themselves based on your first prompt message.
 - **API Key Decoupling**: Configure credentials via unified client settings. API keys can be supplied by the user dynamically or securely injected by the server.
 
-### 🎨 AI Image Generation ("炼金"生图)
+### AI Image Generation ("炼金"生图)
 - **Generative Modes**: Supports both Text-to-Image (txt2img) and Image-to-Image (img2img) modes.
 - **Preset Custom Styles**: Built-in artistic styles (Anime, Oil Painting, Watercolor, Cyberpunk, Ghibli, Pixel Art, Pencil Sketch, Photorealistic) with easy customization.
 - **Quality & Aspect Ratios**: Choose from multiple detail levels (Default, HD, Ultra, Extreme) and aspect ratios (1:1, 16:9, 9:16, 4:3, 3:4) mapped to standard resolution parameters.
 - **Smart Timeout Handling**: Automatically catches upstream server timeouts (status 524/504) and presents descriptive warnings instead of raw HTML pages.
 
-### 🖼️ Resonance Gallery & Imprints (共振广场与个人印记)
+### Resonance Gallery & Imprints (共振广场与个人印记)
 - **Minimalist Grid Cards**: Gallery cards display only the thumbnail, optional "波源" (Featured) badge, and the creator avatar/nickname (defaults to "匿名" for privacy).
 - **Interactive Details Modal**: Clicking cards triggers a popup displaying the full image, creator info, sharing caption, and the prompt (featuring one-click clipboard copying and "Use Prompt" reuse).
 - **Personal Imprints**: Local history acts as a gallery of your creation traces ("个人印记") with SQLite-backed recovery.
 
-### 🔐 User Settings & Password Recovery (设置与账号系统)
+### User Settings & Password Recovery (设置与账号系统)
 - **Unified Settings Dashboard**: Glassmorphic dual-column layout combines API credentials and model configuration on the left with account management on the right.
 - **Secure Password Reset**: Email-based registrations include security questions (e.g. favorite food, pet's name, city of birth) enabling zero-email password recovery.
 
-### 🛠️ Admin Panel (管理员后台)
+### Admin Panel (管理员后台)
 - **Shared Gallery Moderation**: Pin outstanding works as featured ("波源") or delete inappropriate content.
 - **Imprints Overview**: Monitor and inspect overall usage.
 - **Interactive Card Actions**: Administrative operations intercept card click triggers to prevent accidental details modal popups.
 
 ---
 
-## 🛠️ Tech Stack (技术栈)
+## Tech Stack (技术栈)
 
 - **Frontend (前端)**: React 19, Vite, React Router DOM, Custom Vanilla CSS. Built as a high-performance single-file web app output.
 - **Backend (后端)**: Node.js (ES Modules), Native HTTP server.
@@ -45,7 +45,7 @@ An elegant, high-performance, full-stack AI conversation and image generation we
 
 ---
 
-## 📦 Local Quickstart (本地快速启动)
+## Local Quickstart (本地快速启动)
 
 ### Prerequisites
 - Node.js version **22.5.0** or above (required for native `node:sqlite` support).
@@ -80,7 +80,7 @@ Open [http://localhost:5173](http://localhost:5173) in your browser.
 
 ---
 
-## 🚀 VPS Production Deployment (云服务器部署指南)
+## VPS Production Deployment (云服务器部署指南)
 
 Since `/dist` is compiled locally and git-ignored, follow these steps to build and run production on your VPS:
 
@@ -132,5 +132,5 @@ sudo systemctl restart nginx
 
 ---
 
-## 📜 License
+##  License
 Private Repository. All rights reserved.

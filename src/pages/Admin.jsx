@@ -44,7 +44,7 @@ function Admin() {
     <div className="app-container">
       <header className="app-header">
         <div className="header-top-row">
-          <h1 className="art-title">图片管理</h1>
+          <h1 className="art-title">Image Management</h1>
           <button className="settings-btn" onClick={() => navigate('/')}>返回</button>
         </div>
       </header>

@@ -68,19 +68,16 @@ function Home() {
   // 模型设置 - 恢复为 Google API (用于生图)
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('banana_home_api_key') || '')
   const [apiUrl, setApiUrl] = useState(() => localStorage.getItem('banana_home_api_url') || 'https://generativelanguage.googleapis.com')
-  const [gptModel, setGptModel] = useState(() => localStorage.getItem('banana_home_gpt_model') || 'gpt-4o')
-
-
 
   // Model State
   const [selectedModelId, setSelectedModelId] = useState(() => localStorage.getItem('banana_home_model_id') || 'gemini-3-pro-image-preview')
-  const [customModelName, setCustomModelName] = useState('')
+  const [customModelName, setCustomModelName] = useState(() => localStorage.getItem('banana_home_custom_model_name') || '')
 
   // Persistence Effects
   useEffect(() => { localStorage.setItem('banana_home_api_key', apiKey) }, [apiKey])
   useEffect(() => { localStorage.setItem('banana_home_api_url', apiUrl) }, [apiUrl])
-  useEffect(() => { localStorage.setItem('banana_home_gpt_model', gptModel) }, [gptModel])
   useEffect(() => { localStorage.setItem('banana_home_model_id', selectedModelId) }, [selectedModelId])
+  useEffect(() => { localStorage.setItem('banana_home_custom_model_name', customModelName) }, [customModelName])
   useEffect(() => { localStorage.setItem('banana_home_prompt', prompt) }, [prompt])
   useEffect(() => {
     if (selectedStyle) localStorage.setItem('banana_home_style', JSON.stringify(selectedStyle))
@@ -169,7 +166,7 @@ function Home() {
           prompt: textToRefine,
           apiKey: apiKey,
           apiUrl: apiUrl,
-          model: gptModel
+          model: model
         })
       })
 
@@ -241,7 +238,7 @@ function Home() {
           messages: newHistory,
           apiKey: apiKey,
           apiUrl: apiUrl,
-          model: gptModel
+          model: model
         })
       })
       const data = await res.json()
@@ -748,15 +745,6 @@ function Home() {
               onChange={(e) => setApiKey(e.target.value)}
               disabled={!apiUrl || apiUrl.includes('googleapis.com')}
               placeholder={(!apiUrl || apiUrl.includes('googleapis.com')) ? "无需填写 (服务器自动注入)" : "sk-..."}
-            />
-          </div>
-          <div className="input-group">
-            <label>GPT 模型 (GPT Model)</label>
-            <input
-              type="text"
-              value={gptModel}
-              onChange={(e) => setGptModel(e.target.value)}
-              placeholder="gpt-4o / deepseek-chat"
             />
           </div>
         </div>

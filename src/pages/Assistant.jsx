@@ -48,7 +48,9 @@ function Assistant() {
         try {
             const savedApiUrl = localStorage.getItem('banana_home_api_url') || '';
             const savedApiKey = localStorage.getItem('banana_home_api_key') || '';
-            const savedGptModel = localStorage.getItem('banana_home_gpt_model') || 'gpt-4o';
+            const savedModelId = localStorage.getItem('banana_home_model_id') || 'gemini-3-pro-image-preview';
+            const savedCustomModel = localStorage.getItem('banana_home_custom_model_name') || '';
+            const resolvedModel = savedModelId === 'custom' ? savedCustomModel : savedModelId;
 
             const res = await fetch('/api/alchemy-chat', {
                 method: 'POST',
@@ -57,7 +59,7 @@ function Assistant() {
                     messages: history,
                     apiKey: savedApiKey,
                     apiUrl: savedApiUrl,
-                    model: savedGptModel
+                    model: resolvedModel
                 })
             })
             const data = await res.json()

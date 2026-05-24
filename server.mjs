@@ -7,6 +7,7 @@ import { Buffer } from 'buffer';
 import 'dotenv/config';
 import { createGalleryRepository } from './server/repositories/galleryRepository.mjs';
 import { createImprintRepository } from './server/repositories/imprintRepository.mjs';
+import { createUserRepository } from './server/repositories/userRepository.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -27,6 +28,10 @@ const imprintRepository = createImprintRepository({
     dbPath: DATABASE_PATH,
     maxItems: 20
 });
+const userRepository = createUserRepository({
+    dataDir: DATA_DIR,
+    dbPath: DATABASE_PATH
+});
 
 const MIME_TYPES = {
     '.html': 'text/html',
@@ -36,6 +41,42 @@ const MIME_TYPES = {
     '.png': 'image/png',
     '.svg': 'image/svg+xml',
 };
+
+async function readJsonBody(req) {
+    const chunks = [];
+    for await (const chunk of req) {
+        chunks.push(chunk);
+    }
+    const raw = Buffer.concat(chunks).toString();
+    return raw ? JSON.parse(raw) : {};
+}
+
+function sendJson(res, status, payload) {
+    res.writeHead(status, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(payload));
+}
+
+function getBearerToken(req) {
+    const header = req.headers.authorization || '';
+    const match = header.match(/^Bearer\s+(.+)$/i);
+    return match ? match[1] : null;
+}
+
+function getCurrentUser(req) {
+    return userRepository.getUserByToken(getBearerToken(req));
+}
+
+function publicGalleryItem(item) {
+    return {
+        id: item.id,
+        filename: item.filename,
+        prompt: item.prompt,
+        author: item.author,
+        deviceId: item.deviceId,
+        caption: item.caption,
+        timestamp: item.timestamp
+    };
+}
 
 // 通用 LLM 调用辅助函数 - 兼容 Gemini 和 OpenAI-compatible (GPT) 接口
 async function callLLMChat({ messages, apiKey, apiUrl, model }) {
@@ -348,7 +389,7 @@ async function callLLMImage({ prompt, apiKey, apiUrl, model, aspectRatio, qualit
 const server = http.createServer(async (req, res) => {
     // 添加 CORS 头
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
     if (req.method === 'OPTIONS') {
@@ -369,6 +410,38 @@ const server = http.createServer(async (req, res) => {
     }
 
     // API 代理 - 转发 /v1 和 /v1beta 请求
+    if (req.url === '/api/auth/register' && req.method === 'POST') {
+        try {
+            const result = userRepository.register(await readJsonBody(req));
+            sendJson(res, 200, result);
+        } catch (err) {
+            sendJson(res, 400, { error: err.message });
+        }
+        return;
+    }
+
+    if (req.url === '/api/auth/login' && req.method === 'POST') {
+        try {
+            const result = userRepository.login(await readJsonBody(req));
+            sendJson(res, 200, result);
+        } catch (err) {
+            sendJson(res, 401, { error: err.message });
+        }
+        return;
+    }
+
+    if (req.url === '/api/auth/me' && req.method === 'GET') {
+        const user = getCurrentUser(req);
+        sendJson(res, user ? 200 : 401, user ? { user } : { error: '未登录' });
+        return;
+    }
+
+    if (req.url === '/api/auth/logout' && req.method === 'POST') {
+        userRepository.logout(getBearerToken(req));
+        sendJson(res, 200, { success: true });
+        return;
+    }
+
     if (req.url.startsWith('/v1')) {
         try {
             // Construct target URL
@@ -594,6 +667,7 @@ const server = http.createServer(async (req, res) => {
             }
 
             const { image, prompt, author, deviceId, caption } = JSON.parse(body);
+            const currentUser = getCurrentUser(req);
             console.log('[API] 解析成功, Author:', author, 'Prompt:', prompt?.substring(0, 20));
 
             if (!image) {
@@ -630,6 +704,7 @@ const server = http.createServer(async (req, res) => {
                 prompt: prompt || '',
                 author: author || null,
                 deviceId: deviceId || null,
+                userId: currentUser?.id || null,
                 caption: caption || null,
                 timestamp: Date.now()
             });
@@ -651,7 +726,7 @@ const server = http.createServer(async (req, res) => {
     // GET /api/gallery - 获取共享图片列表
     if (req.url === '/api/gallery' && req.method === 'GET') {
         try {
-            const meta = galleryRepository.list();
+            const meta = galleryRepository.list().map(publicGalleryItem);
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify(meta));
         } catch (err) {
@@ -674,6 +749,7 @@ const server = http.createServer(async (req, res) => {
             }
             const body = Buffer.concat(chunks).toString();
             const { deviceId } = JSON.parse(body);
+            const currentUser = getCurrentUser(req);
 
             // 读取元数据
             const item = galleryRepository.findById(idToDelete);
@@ -685,7 +761,8 @@ const server = http.createServer(async (req, res) => {
             }
 
             // 验证设备ID
-            if (item.deviceId !== deviceId) {
+            const canDelete = (currentUser && item.userId === currentUser.id) || item.deviceId === deviceId;
+            if (!canDelete) {
                 res.writeHead(403);
                 res.end(JSON.stringify({ error: '只能删除自己分享的图片' }));
                 return;
@@ -716,12 +793,13 @@ const server = http.createServer(async (req, res) => {
         try {
             const urlObj = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
             const deviceId = urlObj.searchParams.get('deviceId');
-            if (!deviceId) {
+            const currentUser = getCurrentUser(req);
+            if (!deviceId && !currentUser) {
                 res.writeHead(400, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ error: '缺少 deviceId' }));
                 return;
             }
-            const list = imprintRepository.list(deviceId);
+            const list = imprintRepository.list(currentUser ? { userId: currentUser.id } : { deviceId });
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify(list));
         } catch (err) {
@@ -741,14 +819,22 @@ const server = http.createServer(async (req, res) => {
             }
             const body = JSON.parse(Buffer.concat(chunks).toString());
             const { id, url, prompt, deviceId, timestamp } = body;
+            const currentUser = getCurrentUser(req);
 
-            if (!id || !url || !deviceId) {
+            if (!id || !url || (!deviceId && !currentUser)) {
                 res.writeHead(400, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ error: '缺少必要参数 (id, url, deviceId)' }));
                 return;
             }
 
-            const item = imprintRepository.add({ id, url, prompt, deviceId, timestamp });
+            const item = imprintRepository.add({
+                id,
+                url,
+                prompt,
+                deviceId: deviceId || null,
+                userId: currentUser?.id || null,
+                timestamp
+            });
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ success: true, item }));
         } catch (err) {
@@ -770,14 +856,18 @@ const server = http.createServer(async (req, res) => {
             }
             const body = JSON.parse(Buffer.concat(chunks).toString());
             const { deviceId } = body;
+            const currentUser = getCurrentUser(req);
 
-            if (!deviceId) {
+            if (!deviceId && !currentUser) {
                 res.writeHead(400, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ error: '缺少 deviceId' }));
                 return;
             }
 
-            const success = imprintRepository.deleteById(idToDelete, deviceId);
+            const success = imprintRepository.deleteById(
+                idToDelete,
+                currentUser ? { userId: currentUser.id } : { deviceId }
+            );
             if (success) {
                 res.writeHead(200, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ success: true }));
@@ -794,6 +884,20 @@ const server = http.createServer(async (req, res) => {
     }
 
     // 静态服务 - 共享图片访问
+    if (req.url === '/api/admin/images' && req.method === 'GET') {
+        const currentUser = getCurrentUser(req);
+        if (!currentUser || currentUser.role !== 'admin') {
+            sendJson(res, 403, { error: '需要管理员权限' });
+            return;
+        }
+
+        sendJson(res, 200, {
+            gallery: galleryRepository.listAllForAdmin(),
+            imprints: imprintRepository.listAllForAdmin()
+        });
+        return;
+    }
+
     if (req.url.startsWith('/uploads/')) {
         const filename = req.url.replace('/uploads/', '');
         const filePath = path.join(GALLERY_DIR, filename);

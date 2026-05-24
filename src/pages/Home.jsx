@@ -50,6 +50,7 @@ const AVAILABLE_MODELS = [
 
 const HISTORY_STORAGE_KEY = 'banana_home_history'
 const LEGACY_HISTORY_STORAGE_KEY = 'banana_history'
+const AUTH_STORAGE_KEY = 'negentropy_auth_token'
 
 function readLocalHistory() {
   try {
@@ -88,6 +89,12 @@ function Home() {
   // Model State
   const [selectedModelId, setSelectedModelId] = useState(() => localStorage.getItem('banana_home_model_id') || 'gemini-3-pro-image-preview')
   const [customModelName, setCustomModelName] = useState(() => localStorage.getItem('banana_home_custom_model_name') || '')
+  const [authToken, setAuthToken] = useState(() => localStorage.getItem(AUTH_STORAGE_KEY) || '')
+  const [currentUser, setCurrentUser] = useState(null)
+  const [showAuthModal, setShowAuthModal] = useState(false)
+  const [authMode, setAuthMode] = useState('login')
+  const [authForm, setAuthForm] = useState({ username: '', password: '', nickname: '' })
+  const [authError, setAuthError] = useState('')
 
   // Persistence Effects
   useEffect(() => { localStorage.setItem('banana_home_api_key', apiKey) }, [apiKey])
@@ -101,6 +108,10 @@ function Home() {
   }, [selectedStyle])
   useEffect(() => { localStorage.setItem('banana_home_ratio', aspectRatio) }, [aspectRatio])
   useEffect(() => { localStorage.setItem('banana_home_quality', quality) }, [quality]) // Save Quality
+  useEffect(() => {
+    if (authToken) localStorage.setItem(AUTH_STORAGE_KEY, authToken)
+    else localStorage.removeItem(AUTH_STORAGE_KEY)
+  }, [authToken])
 
   // Save History (Limit to 20 items to avoid quota issues with base64)
   useEffect(() => {
@@ -110,6 +121,8 @@ function Home() {
       console.warn('Storage quota exceeded, could not save history');
     }
   }, [history])
+
+  const authHeaders = () => authToken ? { Authorization: `Bearer ${authToken}` } : {}
 
   // Load Initial State
   useEffect(() => {
@@ -226,79 +239,6 @@ function Home() {
   const [showTemplates, setShowTemplates] = useState(false)
   const [showTemplateModal, setShowTemplateModal] = useState(false)
   const [newTemplateName, setNewTemplateName] = useState('')
-
-  // 启动副驾驶
-  const startCopilot = () => {
-    if (!prompt.trim()) {
-      alert('请先输入一个基础想法')
-      return
-    }
-    const initialMsg = { role: 'user', content: `初始想法: ${prompt}` }
-    setCopilotMessages([initialMsg])
-    setIsCopilotOpen(true)
-    handleCopilotChat([initialMsg])
-  }
-
-  // 处理对话
-  const handleCopilotChat = async (historyOverride = null) => {
-    const currentHistory = historyOverride || copilotMessages
-    const nextInput = copilotInput.trim()
-
-    let newHistory = currentHistory
-    if (!historyOverride && nextInput) {
-      newHistory = [...currentHistory, { role: 'user', content: nextInput }]
-      setCopilotMessages(newHistory)
-      setCopilotInput('')
-    }
-
-    setCopilotLoading(true)
-    try {
-      // 助手接口与“对话（Chat）”配置保持一致
-      let chatApiKey = ''
-      let chatApiUrl = 'https://generativelanguage.googleapis.com'
-      let chatModel = 'gpt5-4'
-      try {
-        const savedChatSettings = localStorage.getItem('banana_chat_api_settings')
-        if (savedChatSettings) {
-          const parsed = JSON.parse(savedChatSettings)
-          chatApiKey = parsed.apiKey || ''
-          chatApiUrl = parsed.apiUrl || 'https://generativelanguage.googleapis.com'
-          chatModel = parsed.model || 'gpt5-4'
-        }
-      } catch (e) {}
-
-      const res = await fetch('/api/alchemy-chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: newHistory,
-          apiKey: chatApiKey,
-          apiUrl: chatApiUrl,
-          model: chatModel
-        })
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || '对话失败')
-
-      setCopilotMessages([...newHistory, { role: 'assistant', content: data.content }])
-    } catch (err) {
-      setCopilotMessages([...newHistory, { role: 'assistant', content: `❌ 错误: ${err.message}` }])
-    } finally {
-      setCopilotLoading(false)
-    }
-  }
-
-  // 应用结果
-  const applyCopilotResult = (text) => {
-    const match = text.match(/<final_prompt>([\s\S]*?)<\/final_prompt>/i);
-    if (match && match[1]) {
-      setPrompt(match[1].trim());
-      closeCopilot(); // Use the enhanced close handler
-      setCopilotMessages([]);
-    } else {
-      alert('AI 还没有给出最终成品提示词，请继续对话或等待其包裹在标签中');
-    }
-  }
 
   // 风格管理
   const [customStyles, setCustomStyles] = useState(() => {
@@ -493,7 +433,9 @@ function Home() {
 
     const loadImprints = async () => {
       try {
-        const res = await fetch(`/api/imprints?deviceId=${encodeURIComponent(deviceId)}`)
+        const res = await fetch(`/api/imprints?deviceId=${encodeURIComponent(deviceId)}`, {
+          headers: authHeaders()
+        })
         const data = await res.json()
         if (!res.ok) throw new Error(data.error || '加载印记失败')
 
@@ -519,7 +461,7 @@ function Home() {
     return () => {
       cancelled = true
     }
-  }, [deviceId])
+  }, [deviceId, authToken])
 
   const saveImprintToDatabase = async (item, targetDeviceId = deviceId) => {
     if (!targetDeviceId || !item?.id || !item?.url) return
@@ -527,7 +469,7 @@ function Home() {
     try {
       await fetch('/api/imprints', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({
           id: item.id,
           url: item.url,
@@ -547,7 +489,7 @@ function Home() {
     try {
       await fetch(`/api/imprints/${encodeURIComponent(id)}`, {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ deviceId })
       })
     } catch (e) {
@@ -556,6 +498,68 @@ function Home() {
   }
 
   // 保存昵称
+  useEffect(() => {
+    if (!authToken) {
+      setCurrentUser(null)
+      return
+    }
+
+    let cancelled = false
+    const loadCurrentUser = async () => {
+      try {
+        const res = await fetch('/api/auth/me', { headers: authHeaders() })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || '登录已失效')
+        if (!cancelled) setCurrentUser(data.user)
+      } catch (e) {
+        if (!cancelled) {
+          setAuthToken('')
+          setCurrentUser(null)
+        }
+      }
+    }
+
+    loadCurrentUser()
+    return () => {
+      cancelled = true
+    }
+  }, [authToken])
+
+  useEffect(() => {
+    if (currentUser?.nickname && !nickname) {
+      saveNickname(currentUser.nickname)
+    }
+  }, [currentUser])
+
+  const submitAuth = async () => {
+    setAuthError('')
+    try {
+      const endpoint = authMode === 'register' ? '/api/auth/register' : '/api/auth/login'
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(authForm)
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || '认证失败')
+
+      setAuthToken(data.token)
+      setCurrentUser(data.user)
+      setShowAuthModal(false)
+      setAuthForm({ username: '', password: '', nickname: '' })
+    } catch (e) {
+      setAuthError(e.message)
+    }
+  }
+
+  const logout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST', headers: authHeaders() })
+    } catch (e) {}
+    setAuthToken('')
+    setCurrentUser(null)
+  }
+
   const saveNickname = (name) => {
     setNickname(name)
     localStorage.setItem('banana_nickname', name)
@@ -582,7 +586,7 @@ function Home() {
     try {
       const res = await fetch(`/api/gallery/${id}`, {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ deviceId })
       })
       const data = await res.json()
@@ -612,7 +616,7 @@ function Home() {
     try {
       const res = await fetch('/api/share', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({
           image: pendingShareItem.url,
           prompt: pendingShareItem.prompt,
@@ -728,6 +732,17 @@ function Home() {
       <header className="app-header">
         <div className="header-top-row">
           <h1 className="art-title">Negentropy Pixels</h1>
+          <div className="header-controls">
+            {currentUser ? (
+              <>
+                {currentUser.role === 'admin' && (
+                  <button className="settings-btn" onClick={() => navigate('/admin')}>管理</button>
+                )}
+                <button className="settings-btn" onClick={logout}>{currentUser.nickname || currentUser.username}</button>
+              </>
+            ) : (
+              <button className="settings-btn" onClick={() => setShowAuthModal(true)}>登录</button>
+            )}
           <button
             className="settings-btn"
             onClick={() => setShowSettings(!showSettings)}
@@ -738,6 +753,7 @@ function Home() {
             </svg>
             <span style={{ marginLeft: '4px', fontSize: '0.9rem', fontWeight: '800' }}>设置</span>
           </button>
+          </div>
         </div>
 
 
@@ -765,6 +781,58 @@ function Home() {
 
 
       </header>
+
+      {showAuthModal && (
+        <div className="modal-overlay" onClick={() => setShowAuthModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <h3>{authMode === 'register' ? '创建账号' : '登录账号'}</h3>
+            <div className="modal-field">
+              <label>用户名</label>
+              <input
+                type="text"
+                value={authForm.username}
+                onChange={(e) => setAuthForm({ ...authForm, username: e.target.value })}
+                placeholder="3-24 位字母、数字或下划线"
+              />
+            </div>
+            {authMode === 'register' && (
+              <div className="modal-field">
+                <label>昵称</label>
+                <input
+                  type="text"
+                  value={authForm.nickname}
+                  onChange={(e) => setAuthForm({ ...authForm, nickname: e.target.value })}
+                  placeholder="公开显示名称，可选"
+                />
+              </div>
+            )}
+            <div className="modal-field">
+              <label>密码</label>
+              <input
+                type="password"
+                value={authForm.password}
+                onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })}
+                placeholder="至少 6 位"
+              />
+            </div>
+            {authError && <div className="error-message">{authError}</div>}
+            <div className="modal-buttons">
+              <button
+                className="modal-btn cancel"
+                onClick={() => {
+                  setAuthMode(authMode === 'register' ? 'login' : 'register')
+                  setAuthError('')
+                }}
+              >
+                {authMode === 'register' ? '已有账号' : '创建账号'}
+              </button>
+              <button className="modal-btn confirm" onClick={submitAuth}>
+                {authMode === 'register' ? '注册并登录' : '登录'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showSettings && (
         <div className="card settings-section glass-effect">

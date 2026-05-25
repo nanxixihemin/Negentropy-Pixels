@@ -151,6 +151,95 @@ function formatImageGenerationError(err) {
     return err.message + (err.cause ? ` (${err.cause.message || err.cause})` : '');
 }
 
+function isRetryableImageGenerationError(err) {
+    const errMsg = String(err?.message || '');
+    if (errMsg.includes('400') ||
+        errMsg.includes('401') ||
+        errMsg.includes('403') ||
+        errMsg.includes('404') ||
+        errMsg.includes('429') ||
+        errMsg.includes('504') ||
+        errMsg.includes('524') ||
+        errMsg.includes('timeout') ||
+        errMsg.includes('Timeout') ||
+        errMsg.includes('未配置') ||
+        errMsg.includes('提示词')) {
+        return false;
+    }
+    return errMsg.includes('ECONNRESET') ||
+        errMsg.includes('ECONNREFUSED') ||
+        errMsg.includes('ENOTFOUND') ||
+        errMsg.includes('fetch failed') ||
+        errMsg.includes('socket');
+}
+
+function extractImageUrlFromText(text) {
+    if (!text || typeof text !== 'string') return null;
+    const dataUrlMatch = text.match(/data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=_-]+/);
+    if (dataUrlMatch) return dataUrlMatch[0];
+
+    const markdownImageMatch = text.match(/!\[[^\]]*]\((https?:\/\/[^)\s]+)\)/);
+    if (markdownImageMatch) return markdownImageMatch[1];
+
+    const urlMatch = text.match(/https?:\/\/[^\s"'<>),]+/);
+    return urlMatch ? urlMatch[0] : null;
+}
+
+function extractImageUrlFromPayload(payload) {
+    const queue = [payload];
+    const seen = new Set();
+
+    while (queue.length) {
+        const value = queue.shift();
+        if (value === null || value === undefined) continue;
+
+        if (typeof value === 'string') {
+            const extracted = extractImageUrlFromText(value);
+            if (extracted) return extracted;
+            continue;
+        }
+
+        if (typeof value !== 'object') continue;
+        if (seen.has(value)) continue;
+        seen.add(value);
+
+        if (typeof value.b64_json === 'string') {
+            return `data:image/png;base64,${value.b64_json}`;
+        }
+        if (typeof value.url === 'string') {
+            return value.url;
+        }
+        if (typeof value.image_url === 'string') {
+            return value.image_url;
+        }
+        if (value.image_url && typeof value.image_url.url === 'string') {
+            return value.image_url.url;
+        }
+        if (typeof value.image === 'string') {
+            const extracted = extractImageUrlFromText(value.image);
+            if (extracted) return extracted;
+        }
+
+        for (const child of Object.values(value)) {
+            queue.push(child);
+        }
+    }
+
+    return null;
+}
+
+function describeImagePayload(payload) {
+    if (!payload || typeof payload !== 'object') return typeof payload;
+    const keys = Object.keys(payload).slice(0, 8).join(', ') || 'empty';
+    const dataKeys = Array.isArray(payload.data) && payload.data[0] && typeof payload.data[0] === 'object'
+        ? Object.keys(payload.data[0]).slice(0, 8).join(', ')
+        : '';
+    const choiceKeys = Array.isArray(payload.choices) && payload.choices[0] && typeof payload.choices[0] === 'object'
+        ? Object.keys(payload.choices[0]).slice(0, 8).join(', ')
+        : '';
+    return `顶层字段: ${keys}${dataKeys ? `; data[0]字段: ${dataKeys}` : ''}${choiceKeys ? `; choices[0]字段: ${choiceKeys}` : ''}`;
+}
+
 function serializeImageJob(job) {
     return {
         jobId: job.id,
@@ -200,14 +289,7 @@ function startImageJob(params) {
                     break;
                 } catch (err) {
                     console.error(`[ImageGen] 第 ${attempt} 次尝试失败:`, err.message);
-                    const isTransient = !err.message.includes('400') && 
-                                        !err.message.includes('401') && 
-                                        !err.message.includes('403') && 
-                                        !err.message.includes('404') && 
-                                        !err.message.includes('未配置') && 
-                                        !err.message.includes('提示词');
-                                        
-                    if (attempt >= maxRetries || !isTransient) {
+                    if (attempt >= maxRetries || !isRetryableImageGenerationError(err)) {
                         throw err;
                     }
                     attempt++;
@@ -543,19 +625,19 @@ async function callLLMImage({ prompt, apiKey, apiUrl, model, aspectRatio, qualit
             throw new Error(`AI 生图接口返回非 JSON 格式数据: ${rawText.substring(0, 100)}`);
         }
 
-        const imgData = data.data?.[0];
-        if (!imgData) {
-            throw new Error('未在生图接口响应中找到图片数据');
-        }
-
-        if (imgData.b64_json) {
-            return `data:image/png;base64,${imgData.b64_json}`;
-        } else if (imgData.url) {
+        const extractedImageUrl = extractImageUrlFromPayload(data);
+        if (extractedImageUrl) {
             // Return URL directly to avoid slow base64 transfer causing gateway timeouts.
-            return imgData.url;
+            return extractedImageUrl;
         }
 
-        throw new Error('生图接口响应中缺少图片数据');
+        const apiError = data.error?.message || data.error || data.message || data.msg;
+        if (apiError) {
+            const cleanErr = typeof apiError === 'object' ? JSON.stringify(apiError) : apiError;
+            throw new Error(`API 服务商返回了错误: ${cleanErr}`);
+        }
+
+        throw new Error(`未在生图接口响应中找到图片数据（${describeImagePayload(data)}）`);
     }
 }
 
@@ -1772,7 +1854,10 @@ const server = http.createServer(async (req, res) => {
                         res.writeHead(404);
                         res.end('Not Found');
                     } else {
-                        res.writeHead(200, { 'Content-Type': 'text/html' });
+                        res.writeHead(200, {
+                            'Content-Type': 'text/html',
+                            'Cache-Control': 'no-store'
+                        });
                         res.end(content2);
                     }
                 });
@@ -1781,7 +1866,11 @@ const server = http.createServer(async (req, res) => {
                 res.end('Server Error');
             }
         } else {
-            res.writeHead(200, { 'Content-Type': MIME_TYPES[ext] || 'application/octet-stream' });
+            const headers = { 'Content-Type': MIME_TYPES[ext] || 'application/octet-stream' };
+            if (ext === '.html') {
+                headers['Cache-Control'] = 'no-store';
+            }
+            res.writeHead(200, headers);
             res.end(content);
         }
     });

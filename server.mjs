@@ -111,6 +111,18 @@ async function resolveImageBuffer(image) {
         };
     }
 
+    if (String(image || '').startsWith('/uploads/')) {
+        const relativePath = image.replace('/uploads/', '');
+        const filePath = path.normalize(path.join(GALLERY_DIR, relativePath));
+        if (filePath.startsWith(path.normalize(GALLERY_DIR)) && fs.existsSync(filePath)) {
+            const ext = path.extname(filePath).replace('.', '');
+            return {
+                ext,
+                buffer: fs.readFileSync(filePath)
+            };
+        }
+    }
+
     if (/^https?:\/\//i.test(String(image || ''))) {
         const imageRes = await fetch(image);
         if (!imageRes.ok) {
@@ -211,13 +223,16 @@ function startImageJob(params) {
                 const resolvedImage = await resolveImageBuffer(imageUrl);
                 const filename = `gen_${Date.now()}_${crypto.randomUUID().substring(0, 8)}.${resolvedImage.ext}`;
                 
+                const targetSubdir = params.userDirName || 'guests/unknown';
+                const targetDir = path.join(GALLERY_DIR, targetSubdir);
+
                 // 确保目录存在
-                if (!fs.existsSync(GALLERY_DIR)) {
-                    fs.mkdirSync(GALLERY_DIR, { recursive: true });
+                if (!fs.existsSync(targetDir)) {
+                    fs.mkdirSync(targetDir, { recursive: true });
                 }
                 
-                fs.writeFileSync(path.join(GALLERY_DIR, filename), resolvedImage.buffer);
-                localImageUrl = `/uploads/${filename}`;
+                fs.writeFileSync(path.join(targetDir, filename), resolvedImage.buffer);
+                localImageUrl = `/uploads/${targetSubdir}/${filename}`;
                 console.log(`[ImageGen] 保存本地成功: ${localImageUrl}`);
             } catch (saveErr) {
                 console.error(`[ImageGen] 保存本地失败，回退到原始 URL:`, saveErr);
@@ -804,6 +819,9 @@ const server = http.createServer(async (req, res) => {
                 return;
             }
 
+            const currentUser = getCurrentUser(req);
+            const userDirName = currentUser ? `users/${currentUser.username.replace(/[@.]/g, '_')}` : `guests/${(body.deviceId || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+
             const job = startImageJob({
                 prompt,
                 model,
@@ -812,7 +830,8 @@ const server = http.createServer(async (req, res) => {
                 aspectRatio,
                 quality,
                 mode,
-                uploadedImage
+                uploadedImage,
+                userDirName
             });
 
             console.log(`[ImageGen] 已创建后台任务, Job: ${job.id}`);
@@ -1222,8 +1241,15 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.url.startsWith('/uploads/')) {
-        const filename = req.url.replace('/uploads/', '');
-        const filePath = path.join(GALLERY_DIR, filename);
+        const filename = decodeURIComponent(req.url.replace('/uploads/', ''));
+        const filePath = path.normalize(path.join(GALLERY_DIR, filename));
+
+        // 防目录穿越安全防护
+        if (!filePath.startsWith(path.normalize(GALLERY_DIR))) {
+            res.writeHead(403);
+            res.end('Forbidden');
+            return;
+        }
 
         fs.readFile(filePath, (err, content) => {
             if (err) {

@@ -795,7 +795,8 @@ function Home() {
       const response = await fetch('/api/generate-image', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          ...authHeaders()
         },
         body: JSON.stringify({
           prompt: finalPrompt,
@@ -806,7 +807,8 @@ function Home() {
           quality,
           mode,
           uploadedImage,
-          async: true
+          async: true,
+          deviceId: deviceId
         })
       })
 

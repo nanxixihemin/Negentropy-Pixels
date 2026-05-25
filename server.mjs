@@ -61,7 +61,10 @@ async function readJsonBody(req) {
 }
 
 function sendJson(res, status, payload) {
-    res.writeHead(status, { 'Content-Type': 'application/json' });
+    res.writeHead(status, {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-store'
+    });
     res.end(JSON.stringify(payload));
 }
 
@@ -171,9 +174,57 @@ function startImageJob(params) {
             job.status = 'running';
             job.updatedAt = Date.now();
             console.log(`[ImageGen] 后台任务开始, Job: ${job.id}, Model: ${params.model || 'default'}, ApiUrl: ${params.apiUrl || 'default'}`);
-            const imageUrl = await callLLMImage(params);
+            
+            // 自动重试逻辑
+            let attempt = 1;
+            const maxRetries = 3;
+            const delayMs = 2000;
+            let imageUrl = null;
+            
+            while (true) {
+                try {
+                    imageUrl = await callLLMImage(params);
+                    break;
+                } catch (err) {
+                    console.error(`[ImageGen] 第 ${attempt} 次尝试失败:`, err.message);
+                    const isTransient = !err.message.includes('400') && 
+                                        !err.message.includes('401') && 
+                                        !err.message.includes('403') && 
+                                        !err.message.includes('404') && 
+                                        !err.message.includes('未配置') && 
+                                        !err.message.includes('提示词');
+                                        
+                    if (attempt >= maxRetries || !isTransient) {
+                        throw err;
+                    }
+                    attempt++;
+                    const sleepTime = delayMs * Math.pow(2, attempt - 2);
+                    console.log(`[ImageGen] 等待 ${sleepTime}ms 后进行第 ${attempt} 次重试...`);
+                    await new Promise(resolve => setTimeout(resolve, sleepTime));
+                }
+            }
+
+            // 本地缓存逻辑
+            let localImageUrl = imageUrl;
+            try {
+                console.log(`[ImageGen] 正在将生成的图片保存到本地...`);
+                const resolvedImage = await resolveImageBuffer(imageUrl);
+                const filename = `gen_${Date.now()}_${crypto.randomUUID().substring(0, 8)}.${resolvedImage.ext}`;
+                
+                // 确保目录存在
+                if (!fs.existsSync(GALLERY_DIR)) {
+                    fs.mkdirSync(GALLERY_DIR, { recursive: true });
+                }
+                
+                fs.writeFileSync(path.join(GALLERY_DIR, filename), resolvedImage.buffer);
+                localImageUrl = `/uploads/${filename}`;
+                console.log(`[ImageGen] 保存本地成功: ${localImageUrl}`);
+            } catch (saveErr) {
+                console.error(`[ImageGen] 保存本地失败，回退到原始 URL:`, saveErr);
+            }
+
             job.status = 'succeeded';
-            job.imageUrl = imageUrl;
+            job.imageUrl = localImageUrl;
             job.finishedAt = Date.now();
             job.updatedAt = job.finishedAt;
             console.log(`[ImageGen] 后台任务成功, Job: ${job.id}, 用时 ${job.finishedAt - job.createdAt}ms`);
@@ -741,6 +792,13 @@ const server = http.createServer(async (req, res) => {
             if (!prompt) {
                 res.writeHead(400, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ error: '请输入提示词' }));
+                return;
+            }
+
+            if (body.async !== true) {
+                sendJson(res, 409, {
+                    error: '页面版本过旧：请强制刷新页面后再生图。新的生图接口需要后台任务轮询。'
+                });
                 return;
             }
 

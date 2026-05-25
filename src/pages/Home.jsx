@@ -805,7 +805,8 @@ function Home() {
           aspectRatio,
           quality,
           mode,
-          uploadedImage
+          uploadedImage,
+          async: true
         })
       })
 

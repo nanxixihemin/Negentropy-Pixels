@@ -487,7 +487,7 @@ function Chat() {
             <div className="input-group">
               <label>API Base URL</label>
               <select
-                value={['https://store.hachimi-ai.com', 'https://api-inference.modelscope.cn/v1', 'http://10.10.0.35/v1', 'https://generativelanguage.googleapis.com'].includes(apiUrl) ? apiUrl : 'custom'}
+                value={['https://api.siliconflow.cn/v1', 'https://store.hachimi-ai.com', 'https://api-inference.modelscope.cn/v1', 'http://10.10.0.35/v1', 'https://generativelanguage.googleapis.com'].includes(apiUrl) ? apiUrl : 'custom'}
                 onChange={e => {
                   const val = e.target.value;
                   if (val === 'custom') {
@@ -498,13 +498,14 @@ function Chat() {
                 }}
                 style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid #ddd' }}
               >
+                <option value="https://api.siliconflow.cn/v1">https://api.siliconflow.cn/v1 (硅基流动)</option>
                 <option value="https://store.hachimi-ai.com">https://store.hachimi-ai.com</option>
                 <option value="https://api-inference.modelscope.cn/v1">https://api-inference.modelscope.cn/v1</option>
                 <option value="http://10.10.0.35/v1">http://10.10.0.35/v1</option>
                 <option value="https://generativelanguage.googleapis.com">https://generativelanguage.googleapis.com (默认)</option>
                 <option value="custom">自定义...</option>
               </select>
-              {!['https://store.hachimi-ai.com', 'https://api-inference.modelscope.cn/v1', 'http://10.10.0.35/v1', 'https://generativelanguage.googleapis.com'].includes(apiUrl) && (
+              {!['https://api.siliconflow.cn/v1', 'https://store.hachimi-ai.com', 'https://api-inference.modelscope.cn/v1', 'http://10.10.0.35/v1', 'https://generativelanguage.googleapis.com'].includes(apiUrl) && (
                 <input
                   type="text"
                   value={apiUrl === 'custom-url' ? '' : apiUrl}

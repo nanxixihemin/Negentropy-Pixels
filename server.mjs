@@ -241,7 +241,8 @@ function startImageJob(params) {
 }
 
 async function callLLMChat({ messages, apiKey, apiUrl, model }) {
-    const isGemini = (!apiUrl || apiUrl.includes('googleapis.com') || (model && model.startsWith('gemini')));
+    const cleanApiUrl = (apiUrl && apiUrl.startsWith('http')) ? apiUrl : '';
+    const isGemini = (cleanApiUrl && cleanApiUrl.includes('googleapis.com')) || (model && String(model).toLowerCase().includes('gemini'));
     console.log(`[LLMChat] Request - Model: ${model || 'default'}, Url: ${apiUrl || 'default'}, isGemini: ${isGemini}`);
 
     if (isGemini) {
@@ -251,8 +252,8 @@ async function callLLMChat({ messages, apiKey, apiUrl, model }) {
         }
 
         let baseUrl = 'https://generativelanguage.googleapis.com';
-        if (apiUrl && apiUrl.startsWith('http')) {
-            baseUrl = apiUrl.replace(/\/$/, '');
+        if (cleanApiUrl) {
+            baseUrl = cleanApiUrl.replace(/\/$/, '');
         }
 
         const modelName = model || 'gemini-1.5-flash';
@@ -299,7 +300,7 @@ async function callLLMChat({ messages, apiKey, apiUrl, model }) {
         return reply;
     } else {
         const resolvedApiKey = apiKey || process.env.GPT_API_KEY || process.env.SILICON_API_KEY;
-        const resolvedApiUrl = apiUrl || process.env.GPT_API_URL || 'https://api.siliconflow.cn/v1';
+        const resolvedApiUrl = cleanApiUrl || process.env.GPT_API_URL || 'https://api.siliconflow.cn/v1';
         let modelName = model || process.env.GPT_MODEL_NAME || 'deepseek-ai/DeepSeek-V3';
         if (modelName === 'gpt-image2' || modelName === 'gpt-image-2') {
             modelName = 'gpt5-4'; // Fallback to chat model for refinement/dialogues
@@ -370,7 +371,8 @@ async function callLLMChat({ messages, apiKey, apiUrl, model }) {
 
 // 通用 AI 生图辅助函数 - 兼容 Gemini 和 OpenAI-compatible (GPT) 生图接口
 async function callLLMImage({ prompt, apiKey, apiUrl, model, aspectRatio, quality, mode, uploadedImage }) {
-    const isGemini = (!apiUrl || apiUrl.includes('googleapis.com') || (model && model.includes('gemini')));
+    const cleanApiUrl = (apiUrl && apiUrl.startsWith('http')) ? apiUrl : '';
+    const isGemini = (cleanApiUrl && cleanApiUrl.includes('googleapis.com')) || (model && String(model).toLowerCase().includes('gemini'));
     console.log(`[LLMImage] Request - Model: ${model || 'default'}, Url: ${apiUrl || 'default'}, isGemini: ${isGemini}`);
 
     if (isGemini) {
@@ -380,8 +382,8 @@ async function callLLMImage({ prompt, apiKey, apiUrl, model, aspectRatio, qualit
         }
 
         let baseUrl = 'https://generativelanguage.googleapis.com';
-        if (apiUrl && apiUrl.startsWith('http')) {
-            baseUrl = apiUrl.replace(/\/$/, '');
+        if (cleanApiUrl) {
+            baseUrl = cleanApiUrl.replace(/\/$/, '');
         }
 
         const modelName = model || 'gemini-3-pro-image-preview';
@@ -447,7 +449,7 @@ async function callLLMImage({ prompt, apiKey, apiUrl, model, aspectRatio, qualit
         return url;
     } else {
         const resolvedApiKey = apiKey || process.env.GPT_API_KEY || process.env.SILICON_API_KEY;
-        const resolvedApiUrl = apiUrl || 'https://api.siliconflow.cn/v1';
+        const resolvedApiUrl = cleanApiUrl || 'https://api.siliconflow.cn/v1';
         let modelName = model || 'gpt-image-2';
         if (modelName === 'gpt-image2') {
             modelName = 'gpt-image-2';

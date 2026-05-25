@@ -433,7 +433,7 @@ function Admin() {
               </span>
             </h3>
 
-            <div style={{ flex: 1, overflowY: 'auto', paddingRight: '4px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '12px', minHeight: '300px' }}>
+            <div style={{ flex: 1, overflowY: 'auto', paddingRight: '4px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '12px', minHeight: '300px', alignContent: 'start' }}>
               {selectedUserForPreview.files.length === 0 ? (
                 <div style={{ gridColumn: '1/-1', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-sub)', fontSize: '0.9rem' }}>
                   该用户尚无任何图片作品

@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { Buffer } from 'buffer';
 import crypto from 'crypto';
+import { DatabaseSync } from 'node:sqlite';
 import 'dotenv/config';
 import { createGalleryRepository } from './server/repositories/galleryRepository.mjs';
 import { createImprintRepository } from './server/repositories/imprintRepository.mjs';
@@ -892,14 +893,22 @@ const server = http.createServer(async (req, res) => {
             const id = Date.now().toString();
             const filename = `${id}.${ext}`;
 
-            // 保存图片文件
-            console.log(`[API] 保存文件: ${filename}`);
-            fs.writeFileSync(path.join(GALLERY_DIR, filename), buffer);
+            // Determine user directory name
+            const userDirName = currentUser ? `users/${currentUser.username.replace(/[@.]/g, '_')}` : `guests/${(deviceId || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+            const targetDir = path.join(GALLERY_DIR, userDirName);
+            if (!fs.existsSync(targetDir)) {
+                fs.mkdirSync(targetDir, { recursive: true });
+            }
+
+            // 保存图片文件到用户子目录
+            const relativeFilename = `${userDirName}/${filename}`;
+            console.log(`[API] 保存文件到: ${relativeFilename}`);
+            fs.writeFileSync(path.join(targetDir, filename), buffer);
 
             // 更新元数据
             galleryRepository.add({
                 id,
-                filename,
+                filename: relativeFilename,
                 prompt: prompt || '',
                 author: author || null,
                 deviceId: deviceId || null,
@@ -1236,6 +1245,489 @@ const server = http.createServer(async (req, res) => {
             sendJson(res, 200, { success: true, item });
         } catch (err) {
             sendJson(res, 400, { error: err.message });
+        }
+        return;
+    }
+
+    // --- CRC32 and ZIP Utilities for Packaging ---
+    const crcTable = new Int32Array(256);
+    for (let i = 0; i < 256; i++) {
+        let c = i;
+        for (let j = 0; j < 8; j++) {
+            c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+        }
+        crcTable[i] = c;
+    }
+
+    function crc32(buffer) {
+        let crc = 0 ^ (-1);
+        for (let i = 0; i < buffer.length; i++) {
+            crc = (crc >>> 8) ^ crcTable[(crc ^ buffer[i]) & 0xFF];
+        }
+        return (crc ^ (-1)) >>> 0;
+    }
+
+    function createZip(files) {
+        const buffers = [];
+        const cdEntries = [];
+        let currentOffset = 0;
+
+        for (const file of files) {
+            const filenameBuf = Buffer.from(file.name, 'utf-8');
+            const fileData = file.buffer;
+            const crc = crc32(fileData);
+
+            // Local file header
+            const lfh = Buffer.alloc(30);
+            lfh.writeUInt32LE(0x04034b50, 0); // Signature
+            lfh.writeUInt16LE(10, 4);          // Version needed
+            lfh.writeUInt16LE(0, 6);           // Flags
+            lfh.writeUInt16LE(0, 8);           // Compression method (0 = STORE)
+            lfh.writeUInt16LE(0, 10);          // Last mod time
+            lfh.writeUInt16LE(0, 12);          // Last mod date
+            lfh.writeUInt32LE(crc, 14);        // CRC32
+            lfh.writeUInt32LE(fileData.length, 18); // Compressed size
+            lfh.writeUInt32LE(fileData.length, 22); // Uncompressed size
+            lfh.writeUInt16LE(filenameBuf.length, 26); // Filename length
+            lfh.writeUInt16LE(0, 28);          // Extra field length
+
+            buffers.push(lfh);
+            buffers.push(filenameBuf);
+            buffers.push(fileData);
+
+            // Central directory entry
+            const cde = Buffer.alloc(46);
+            cde.writeUInt32LE(0x02014b50, 0); // Signature
+            cde.writeUInt16LE(20, 4);          // Version made by (2.0)
+            cde.writeUInt16LE(10, 6);          // Version needed (1.0)
+            cde.writeUInt16LE(0, 8);           // Flags
+            cde.writeUInt16LE(0, 10);          // Compression method
+            cde.writeUInt16LE(0, 12);          // Last mod time
+            cde.writeUInt16LE(0, 14);          // Last mod date
+            cde.writeUInt32LE(crc, 16);        // CRC-32
+            cde.writeUInt32LE(fileData.length, 20); // Compressed size
+            cde.writeUInt32LE(fileData.length, 24); // Uncompressed size
+            cde.writeUInt16LE(filenameBuf.length, 28); // Filename length
+            cde.writeUInt16LE(0, 30);          // Extra field length
+            cde.writeUInt16LE(0, 32);          // File comment length
+            cde.writeUInt16LE(0, 34);          // Disk number start
+            cde.writeUInt16LE(0, 36);          // Internal file attrs
+            cde.writeUInt32LE(0, 38);          // External file attrs
+            cde.writeUInt32LE(currentOffset, 42); // Relative offset of local header
+
+            cdEntries.push({ header: cde, name: filenameBuf });
+            
+            currentOffset += lfh.length + filenameBuf.length + fileData.length;
+        }
+
+        const cdOffset = currentOffset;
+        let cdSize = 0;
+
+        for (const entry of cdEntries) {
+            buffers.push(entry.header);
+            buffers.push(entry.name);
+            cdSize += entry.header.length + entry.name.length;
+        }
+
+        // End of central directory record
+        const eocd = Buffer.alloc(22);
+        eocd.writeUInt32LE(0x06054b50, 0); // Signature
+        eocd.writeUInt16LE(0, 4);          // Number of this disk
+        eocd.writeUInt16LE(0, 6);          // Disk where CD starts
+        eocd.writeUInt16LE(files.length, 8); // Number of CD records on this disk
+        eocd.writeUInt16LE(files.length, 10); // Total number of CD records
+        eocd.writeUInt32LE(cdSize, 12);     // Size of CD
+        eocd.writeUInt32LE(cdOffset, 16);   // Offset of CD
+        eocd.writeUInt16LE(0, 20);          // Comment length
+
+        buffers.push(eocd);
+
+        return Buffer.concat(buffers);
+    }
+
+    function getUserFolderInfo(userDirName, userId, deviceId) {
+        let size = 0;
+        const fileList = [];
+
+        // 1. Scan user/guest subfolder if it exists
+        const subDir = path.join(GALLERY_DIR, userDirName);
+        if (fs.existsSync(subDir)) {
+            try {
+                const items = fs.readdirSync(subDir);
+                for (const item of items) {
+                    const itemPath = path.join(subDir, item);
+                    try {
+                        const stat = fs.statSync(itemPath);
+                        if (stat.isFile()) {
+                            size += stat.size;
+                            fileList.push({
+                                name: item,
+                                fullPath: itemPath,
+                                urlPath: `/uploads/${userDirName}/${item}`,
+                                size: stat.size,
+                                timestamp: stat.mtimeMs
+                            });
+                        }
+                    } catch (err) {
+                        console.error(`[AdminStats] Error reading file ${itemPath}:`, err);
+                    }
+                }
+            } catch (dirErr) {
+                console.error(`[AdminStats] Error reading directory ${subDir}:`, dirErr);
+            }
+        }
+
+        // 2. Scan database records for any root GALLERY_DIR files belonging to this user
+        const db = new DatabaseSync(DATABASE_PATH);
+        
+        let galleryQuery;
+        let galleryParams;
+        if (userId) {
+            galleryQuery = `SELECT id, filename, prompt, caption, timestamp FROM gallery_items WHERE user_id = ?`;
+            galleryParams = [userId];
+        } else {
+            galleryQuery = `SELECT id, filename, prompt, caption, timestamp FROM gallery_items WHERE device_id = ? AND user_id IS NULL`;
+            galleryParams = [deviceId];
+        }
+        const dbGalleryItems = db.prepare(galleryQuery).all(...galleryParams);
+        for (const dbItem of dbGalleryItems) {
+            if (!dbItem.filename.includes('/') && !dbItem.filename.includes('\\')) {
+                const rootFilePath = path.join(GALLERY_DIR, dbItem.filename);
+                if (fs.existsSync(rootFilePath)) {
+                    try {
+                        const stat = fs.statSync(rootFilePath);
+                        if (!fileList.some(f => f.fullPath === rootFilePath)) {
+                            size += stat.size;
+                            fileList.push({
+                                name: dbItem.filename,
+                                fullPath: rootFilePath,
+                                urlPath: `/uploads/${dbItem.filename}`,
+                                size: stat.size,
+                                timestamp: dbItem.timestamp || stat.mtimeMs
+                            });
+                        }
+                    } catch (err) {
+                        console.error(`[AdminStats] Error reading root gallery file ${rootFilePath}:`, err);
+                    }
+                }
+            }
+        }
+
+        let imprintQuery;
+        let imprintParams;
+        if (userId) {
+            imprintQuery = `SELECT id, image_url, prompt, timestamp FROM imprint_items WHERE user_id = ?`;
+            imprintParams = [userId];
+        } else {
+            imprintQuery = `SELECT id, image_url, prompt, timestamp FROM imprint_items WHERE device_id = ? AND user_id IS NULL`;
+            imprintParams = [deviceId];
+        }
+        const dbImprintItems = db.prepare(imprintQuery).all(...imprintParams);
+        for (const dbItem of dbImprintItems) {
+            if (dbItem.image_url.startsWith('/uploads/')) {
+                const relPath = dbItem.image_url.replace('/uploads/', '');
+                if (!relPath.includes('/') && !relPath.includes('\\')) {
+                    const rootFilePath = path.join(GALLERY_DIR, relPath);
+                    if (fs.existsSync(rootFilePath)) {
+                        try {
+                            const stat = fs.statSync(rootFilePath);
+                            if (!fileList.some(f => f.fullPath === rootFilePath)) {
+                                size += stat.size;
+                                fileList.push({
+                                    name: relPath,
+                                    fullPath: rootFilePath,
+                                    urlPath: dbItem.image_url,
+                                    size: stat.size,
+                                    timestamp: dbItem.timestamp || stat.mtimeMs
+                                });
+                            }
+                        } catch (err) {
+                            console.error(`[AdminStats] Error reading root imprint file ${rootFilePath}:`, err);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Map prompts to files
+        const filePrompts = {};
+        for (const dbItem of dbGalleryItems) {
+            const nameOnly = path.basename(dbItem.filename);
+            filePrompts[nameOnly] = { prompt: dbItem.prompt, caption: dbItem.caption, isGallery: true, id: dbItem.id };
+        }
+        for (const dbItem of dbImprintItems) {
+            if (dbItem.image_url.startsWith('/uploads/')) {
+                const nameOnly = path.basename(dbItem.image_url);
+                if (!filePrompts[nameOnly]) {
+                    filePrompts[nameOnly] = { prompt: dbItem.prompt, caption: null, isImprint: true, id: dbItem.id };
+                }
+            }
+        }
+
+        for (const fileInfo of fileList) {
+            const info = filePrompts[fileInfo.name] || {};
+            fileInfo.prompt = info.prompt || '';
+            fileInfo.caption = info.caption || '';
+            fileInfo.isGallery = info.isGallery || false;
+            fileInfo.isImprint = info.isImprint || false;
+            fileInfo.dbId = info.id || null;
+        }
+
+        return { size, fileList };
+    }
+
+    // --- Admin User & File Management APIs ---
+
+    if (req.url === '/api/admin/users-summary' && req.method === 'GET') {
+        const currentUser = getCurrentUser(req);
+        if (!currentUser || currentUser.role !== 'admin') {
+            sendJson(res, 403, { error: '需要管理员权限' });
+            return;
+        }
+
+        try {
+            const db = new DatabaseSync(DATABASE_PATH);
+            const users = db.prepare(`SELECT id, username, nickname, role, created_at FROM users`).all();
+            
+            const guestDevices = new Set();
+            const dbGuestImprints = db.prepare(`SELECT DISTINCT device_id FROM imprint_items WHERE user_id IS NULL AND device_id IS NOT NULL`).all();
+            for (const row of dbGuestImprints) {
+                guestDevices.add(row.device_id);
+            }
+            const dbGuestGallery = db.prepare(`SELECT DISTINCT device_id FROM gallery_items WHERE user_id IS NULL AND device_id IS NOT NULL`).all();
+            for (const row of dbGuestGallery) {
+                guestDevices.add(row.device_id);
+            }
+
+            const guestDirRoot = path.join(GALLERY_DIR, 'guests');
+            if (fs.existsSync(guestDirRoot)) {
+                const subDirs = fs.readdirSync(guestDirRoot);
+                for (const subDir of subDirs) {
+                    const fullSubPath = path.join(guestDirRoot, subDir);
+                    if (fs.statSync(fullSubPath).isDirectory()) {
+                        guestDevices.add(subDir);
+                    }
+                }
+            }
+
+            const summaryList = [];
+
+            for (const user of users) {
+                const userDirName = `users/${user.username.replace(/[@.]/g, '_')}`;
+                const { size, fileList } = getUserFolderInfo(userDirName, user.id, null);
+                
+                const imprintCount = db.prepare(`SELECT COUNT(*) AS count FROM imprint_items WHERE user_id = ?`).get(user.id).count;
+                const galleryCount = db.prepare(`SELECT COUNT(*) AS count FROM gallery_items WHERE user_id = ?`).get(user.id).count;
+
+                summaryList.push({
+                    type: 'user',
+                    id: user.id,
+                    username: user.username,
+                    name: user.nickname || user.username,
+                    role: user.role,
+                    dirName: userDirName,
+                    imprintCount,
+                    galleryCount,
+                    totalImages: fileList.length,
+                    totalSize: size,
+                    createdAt: user.created_at,
+                    files: fileList.map(f => ({ name: f.name, size: f.size, urlPath: f.urlPath, timestamp: f.timestamp }))
+                });
+            }
+
+            for (const deviceId of guestDevices) {
+                const userDirName = `guests/${deviceId.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+                const { size, fileList } = getUserFolderInfo(userDirName, null, deviceId);
+                
+                const imprintCount = db.prepare(`SELECT COUNT(*) AS count FROM imprint_items WHERE device_id = ? AND user_id IS NULL`).get(deviceId).count;
+                const galleryCount = db.prepare(`SELECT COUNT(*) AS count FROM gallery_items WHERE device_id = ? AND user_id IS NULL`).get(deviceId).count;
+
+                let createdAt = Date.now();
+                if (fileList.length > 0) {
+                    createdAt = Math.min(...fileList.map(f => f.timestamp));
+                }
+
+                summaryList.push({
+                    type: 'guest',
+                    id: deviceId,
+                    username: null,
+                    name: `访客 (${deviceId.substring(0, 8)})`,
+                    role: 'guest',
+                    dirName: userDirName,
+                    imprintCount,
+                    galleryCount,
+                    totalImages: fileList.length,
+                    totalSize: size,
+                    createdAt: createdAt,
+                    files: fileList.map(f => ({ name: f.name, size: f.size, urlPath: f.urlPath, timestamp: f.timestamp }))
+                });
+            }
+
+            sendJson(res, 200, summaryList);
+        } catch (err) {
+            console.error('[AdminUsersSummary] Error:', err);
+            sendJson(res, 500, { error: err.message });
+        }
+        return;
+    }
+
+    if (req.url.startsWith('/api/admin/users/package')) {
+        try {
+            const urlObj = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+            const targetId = urlObj.searchParams.get('id');
+            const targetType = urlObj.searchParams.get('type');
+            const token = urlObj.searchParams.get('token');
+
+            const user = userRepository.getUserByToken(token);
+            if (!user || user.role !== 'admin') {
+                sendJson(res, 403, { error: '需要管理员权限' });
+                return;
+            }
+
+            if (!targetId || !targetType) {
+                sendJson(res, 400, { error: '缺少 id 或 type 参数' });
+                return;
+            }
+
+            let userDirName;
+            let userId = null;
+            let deviceId = null;
+            let archiveName = 'archive.zip';
+
+            if (targetType === 'user') {
+                userId = targetId;
+                const db = new DatabaseSync(DATABASE_PATH);
+                const u = db.prepare('SELECT username, nickname FROM users WHERE id = ?').get(userId);
+                if (!u) {
+                    sendJson(res, 404, { error: '用户不存在' });
+                    return;
+                }
+                userDirName = `users/${u.username.replace(/[@.]/g, '_')}`;
+                archiveName = `user_${u.nickname || u.username}_images.zip`;
+            } else {
+                deviceId = targetId;
+                userDirName = `guests/${deviceId.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+                archiveName = `guest_${deviceId.substring(0, 8)}_images.zip`;
+            }
+
+            const { fileList } = getUserFolderInfo(userDirName, userId, deviceId);
+            if (fileList.length === 0) {
+                sendJson(res, 404, { error: '该用户没有任何图片作品' });
+                return;
+            }
+
+            const zipFiles = [];
+            for (const fileInfo of fileList) {
+                if (fs.existsSync(fileInfo.fullPath)) {
+                    zipFiles.push({
+                        name: fileInfo.name,
+                        buffer: fs.readFileSync(fileInfo.fullPath)
+                    });
+                }
+            }
+
+            const zipBuffer = createZip(zipFiles);
+
+            res.writeHead(200, {
+                'Content-Type': 'application/zip',
+                'Content-Disposition': `attachment; filename="${encodeURIComponent(archiveName)}"`,
+                'Content-Length': zipBuffer.length
+            });
+            res.end(zipBuffer);
+        } catch (err) {
+            console.error('[AdminPackage] Error:', err);
+            sendJson(res, 500, { error: err.message });
+        }
+        return;
+    }
+
+    if (req.url === '/api/admin/users/clean' && req.method === 'POST') {
+        const currentUser = getCurrentUser(req);
+        if (!currentUser || currentUser.role !== 'admin') {
+            sendJson(res, 403, { error: '需要管理员权限' });
+            return;
+        }
+
+        try {
+            const body = await readJsonBody(req);
+            const { id: targetId, type: targetType } = body;
+
+            if (!targetId || !targetType) {
+                sendJson(res, 400, { error: '缺少 id 或 type 参数' });
+                return;
+            }
+
+            let userDirName;
+            let userId = null;
+            let deviceId = null;
+
+            if (targetType === 'user') {
+                userId = targetId;
+                const db = new DatabaseSync(DATABASE_PATH);
+                const u = db.prepare('SELECT username FROM users WHERE id = ?').get(userId);
+                if (!u) {
+                    sendJson(res, 404, { error: '用户不存在' });
+                    return;
+                }
+                userDirName = `users/${u.username.replace(/[@.]/g, '_')}`;
+            } else {
+                deviceId = targetId;
+                userDirName = `guests/${deviceId.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+            }
+
+            const { fileList } = getUserFolderInfo(userDirName, userId, deviceId);
+            for (const fileInfo of fileList) {
+                if (fs.existsSync(fileInfo.fullPath)) {
+                    try {
+                        fs.unlinkSync(fileInfo.fullPath);
+                    } catch (e) {
+                        console.error(`[AdminClean] Failed to delete file ${fileInfo.fullPath}:`, e.message);
+                    }
+                }
+            }
+
+            const subDir = path.join(GALLERY_DIR, userDirName);
+            if (fs.existsSync(subDir)) {
+                try {
+                    fs.rmSync(subDir, { recursive: true, force: true });
+                } catch (e) {
+                    console.error(`[AdminClean] Failed to delete directory ${subDir}:`, e.message);
+                }
+            }
+
+            const db = new DatabaseSync(DATABASE_PATH);
+            let galleryQuery;
+            let galleryParams;
+            if (userId) {
+                galleryQuery = `SELECT id FROM gallery_items WHERE user_id = ?`;
+                galleryParams = [userId];
+            } else {
+                galleryQuery = `SELECT id FROM gallery_items WHERE device_id = ? AND user_id IS NULL`;
+                galleryParams = [deviceId];
+            }
+            const itemsToDelete = db.prepare(galleryQuery).all(...galleryParams);
+            
+            for (const item of itemsToDelete) {
+                galleryRepository.deleteById(item.id);
+            }
+
+            db.exec('BEGIN');
+            try {
+                if (userId) {
+                    db.prepare('DELETE FROM imprint_items WHERE user_id = ?').run(userId);
+                } else {
+                    db.prepare('DELETE FROM imprint_items WHERE device_id = ? AND user_id IS NULL').run(deviceId);
+                }
+                db.exec('COMMIT');
+            } catch (dbErr) {
+                db.exec('ROLLBACK');
+                throw dbErr;
+            }
+
+            sendJson(res, 200, { success: true });
+        } catch (err) {
+            console.error('[AdminClean] Error:', err);
+            sendJson(res, 500, { error: err.message });
         }
         return;
     }

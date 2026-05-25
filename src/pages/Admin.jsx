@@ -179,13 +179,13 @@ function Admin() {
             className={`settings-tab-btn ${activeTab === 'gallery' ? 'active' : ''}`}
             onClick={() => setActiveTab('gallery')}
           >
-            🖼️ 共享与画廊管理
+            共享与画廊管理
           </button>
           <button
             className={`settings-tab-btn ${activeTab === 'users' ? 'active' : ''}`}
             onClick={() => setActiveTab('users')}
           >
-            👥 用户与文件管理
+            用户与文件管理
           </button>
         </div>
 
@@ -261,19 +261,19 @@ function Admin() {
                 {/* Summary Cards */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginBottom: '24px' }}>
                   <div style={{ background: 'var(--bg-card)', padding: '16px', borderRadius: '12px', border: '2px solid var(--border-color)', boxShadow: '4px 4px 0px var(--border-color)' }}>
-                    <div style={{ fontSize: '0.8rem', color: 'var(--text-sub)', fontWeight: 'bold' }}>👤 注册用户 / 访客</div>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-sub)', fontWeight: 'bold' }}>注册用户 / 访客</div>
                     <div style={{ fontSize: '1.5rem', fontWeight: 'bold', marginTop: '4px', color: 'var(--text-main)' }}>
                       {usersSummary.filter(u => u.type === 'user').length} <span style={{ fontSize: '0.9rem', fontWeight: 'normal', color: 'var(--text-sub)' }}>/ {usersSummary.filter(u => u.type === 'guest').length}</span>
                     </div>
                   </div>
                   <div style={{ background: 'var(--bg-card)', padding: '16px', borderRadius: '12px', border: '2px solid var(--border-color)', boxShadow: '4px 4px 0px var(--border-color)' }}>
-                    <div style={{ fontSize: '0.8rem', color: 'var(--text-sub)', fontWeight: 'bold' }}>🖼️ 作品总数</div>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-sub)', fontWeight: 'bold' }}>作品总数</div>
                     <div style={{ fontSize: '1.5rem', fontWeight: 'bold', marginTop: '4px', color: 'var(--text-main)' }}>
                       {usersSummary.reduce((sum, u) => sum + u.totalImages, 0)} <span style={{ fontSize: '0.9rem', fontWeight: 'normal' }}>张</span>
                     </div>
                   </div>
                   <div style={{ background: 'var(--bg-card)', padding: '16px', borderRadius: '12px', border: '2px solid var(--border-color)', boxShadow: '4px 4px 0px var(--border-color)' }}>
-                    <div style={{ fontSize: '0.8rem', color: 'var(--text-sub)', fontWeight: 'bold' }}>💾 磁盘总占用</div>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-sub)', fontWeight: 'bold' }}>磁盘总占用</div>
                     <div style={{ fontSize: '1.5rem', fontWeight: 'bold', marginTop: '4px', color: 'var(--text-main)' }}>
                       {formatBytes(usersSummary.reduce((sum, u) => sum + u.totalSize, 0))}
                     </div>
@@ -284,7 +284,7 @@ function Admin() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', marginBottom: '16px', flexWrap: 'wrap' }}>
                   <input
                     type="text"
-                    placeholder="🔍 输入用户名、昵称或设备ID搜索..."
+                    placeholder="输入用户名、昵称或设备ID搜索..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     style={{
@@ -303,7 +303,7 @@ function Admin() {
                     style={{ height: '42px', padding: '0 16px', display: 'flex', alignItems: 'center', gap: '6px' }}
                     onClick={loadUsersSummary}
                   >
-                    🔄 刷新数据
+                    刷新数据
                   </button>
                 </div>
 
@@ -376,13 +376,13 @@ function Admin() {
                         {/* Works Stats */}
                         <div style={{ minWidth: '150px' }}>
                           <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--text-main)' }}>
-                            📁 {user.totalImages} 张作品
+                            {user.totalImages} 张作品
                           </div>
                           <div style={{ fontSize: '0.75rem', color: 'var(--text-sub)', marginTop: '2px' }}>
                             (印记: {user.imprintCount} | 共享: {user.galleryCount})
                           </div>
                           <div style={{ fontSize: '0.8rem', fontWeight: 'bold', color: user.totalSize > 10 * 1024 * 1024 ? '#ff9f1c' : 'var(--text-main)', marginTop: '4px' }}>
-                            💾 {formatBytes(user.totalSize)}
+                            {formatBytes(user.totalSize)}
                           </div>
                         </div>
 
@@ -393,7 +393,7 @@ function Admin() {
                             style={{ padding: '6px 12px', borderRadius: '8px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px', height: '34px', width: 'auto', position: 'static', opacity: 1 }}
                             onClick={() => setSelectedUserForPreview(user)}
                           >
-                            🔍 浏览作品
+                            浏览作品
                           </button>
                           <button
                             className="history-action-btn download"
@@ -401,7 +401,7 @@ function Admin() {
                             onClick={() => packageUserWorks(user)}
                             disabled={user.totalImages === 0}
                           >
-                            📦 打包作品
+                            打包作品
                           </button>
                           <button
                             className="history-action-btn delete"
@@ -409,7 +409,7 @@ function Admin() {
                             onClick={() => cleanUserWorks(user)}
                             disabled={user.totalImages === 0}
                           >
-                            🧹 清理作品
+                            清理作品
                           </button>
                         </div>
                       </div>
@@ -427,7 +427,7 @@ function Admin() {
         <div className="modal-overlay" onClick={() => setSelectedUserForPreview(null)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '800px', width: '95%', borderRadius: '16px', padding: '24px', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
             <h3 style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'space-between' }}>
-              <span>✨ 【{selectedUserForPreview.name}】的作品列表</span>
+              <span>【{selectedUserForPreview.name}】的作品列表</span>
               <span style={{ fontSize: '0.85rem', color: 'var(--text-sub)' }}>
                 共 {selectedUserForPreview.totalImages} 张 ({formatBytes(selectedUserForPreview.totalSize)})
               </span>
@@ -490,7 +490,7 @@ function Admin() {
                 onClick={() => packageUserWorks(selectedUserForPreview)}
                 disabled={selectedUserForPreview.totalImages === 0}
               >
-                📦 打包该用户作品
+                打包该用户作品
               </button>
               <button className="modal-btn cancel" style={{ width: 'auto', marginTop: 0 }} onClick={() => setSelectedUserForPreview(null)}>
                 关闭

@@ -40,6 +40,7 @@ export function createUserRepository({ dataDir, dbPath }) {
     }
 
     const db = new DatabaseSync(dbPath);
+    db.exec('PRAGMA busy_timeout = 10000;');
     db.exec(`
         PRAGMA journal_mode = WAL;
         CREATE TABLE IF NOT EXISTS users (

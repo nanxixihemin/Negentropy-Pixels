@@ -31,6 +31,7 @@ export function createGalleryRepository({ dataDir, dbPath, legacyMetaPath, maxIt
     }
 
     const db = new DatabaseSync(dbPath);
+    db.exec('PRAGMA busy_timeout = 10000;');
     db.exec(`
         PRAGMA journal_mode = WAL;
         CREATE TABLE IF NOT EXISTS gallery_items (

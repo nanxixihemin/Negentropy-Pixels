@@ -26,6 +26,7 @@ export function createChatRepository({ dataDir, dbPath, maxSessions = 50 }) {
     }
 
     const db = new DatabaseSync(dbPath);
+    db.exec('PRAGMA busy_timeout = 10000;');
     db.exec(`
         PRAGMA journal_mode = WAL;
         CREATE TABLE IF NOT EXISTS chat_sessions (

@@ -711,14 +711,24 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.url === '/api/auth/me' && req.method === 'GET') {
-        const user = getCurrentUser(req);
-        sendJson(res, user ? 200 : 401, user ? { user } : { error: '未登录' });
+        try {
+            const user = getCurrentUser(req);
+            sendJson(res, user ? 200 : 401, user ? { user } : { error: '未登录' });
+        } catch (err) {
+            console.error('[AuthMe GET] Error:', err);
+            sendJson(res, 500, { error: err.message });
+        }
         return;
     }
 
     if (req.url === '/api/auth/logout' && req.method === 'POST') {
-        userRepository.logout(getBearerToken(req));
-        sendJson(res, 200, { success: true });
+        try {
+            userRepository.logout(getBearerToken(req));
+            sendJson(res, 200, { success: true });
+        } catch (err) {
+            console.error('[AuthLogout POST] Error:', err);
+            sendJson(res, 500, { error: err.message });
+        }
         return;
     }
 
@@ -1280,41 +1290,51 @@ const server = http.createServer(async (req, res) => {
 
     // 静态服务 - 共享图片访问
     if (req.url === '/api/admin/images' && req.method === 'GET') {
-        const currentUser = getCurrentUser(req);
-        if (!currentUser || currentUser.role !== 'admin') {
-            sendJson(res, 403, { error: '需要管理员权限' });
-            return;
-        }
+        try {
+            const currentUser = getCurrentUser(req);
+            if (!currentUser || currentUser.role !== 'admin') {
+                sendJson(res, 403, { error: '需要管理员权限' });
+                return;
+            }
 
-        sendJson(res, 200, {
-            gallery: galleryRepository.listAllForAdmin(),
-            imprints: imprintRepository.listAllForAdmin()
-        });
+            sendJson(res, 200, {
+                gallery: galleryRepository.listAllForAdmin(),
+                imprints: imprintRepository.listAllForAdmin()
+            });
+        } catch (err) {
+            console.error('[AdminImages GET] Error:', err);
+            sendJson(res, 500, { error: err.message });
+        }
         return;
     }
 
     const adminGalleryDeleteMatch = req.url.match(/^\/api\/admin\/gallery\/([a-zA-Z0-9_-]+)$/);
     if (adminGalleryDeleteMatch && req.method === 'DELETE') {
-        const currentUser = getCurrentUser(req);
-        if (!currentUser || currentUser.role !== 'admin') {
-            sendJson(res, 403, { error: '需要管理员权限' });
-            return;
-        }
+        try {
+            const currentUser = getCurrentUser(req);
+            if (!currentUser || currentUser.role !== 'admin') {
+                sendJson(res, 403, { error: '需要管理员权限' });
+                return;
+            }
 
-        const idToDelete = adminGalleryDeleteMatch[1];
-        const item = galleryRepository.findById(idToDelete);
-        if (!item) {
-            sendJson(res, 404, { error: '图片不存在' });
-            return;
-        }
+            const idToDelete = adminGalleryDeleteMatch[1];
+            const item = galleryRepository.findById(idToDelete);
+            if (!item) {
+                sendJson(res, 404, { error: '图片不存在' });
+                return;
+            }
 
-        const filePath = path.join(GALLERY_DIR, item.filename);
-        if (fs.existsSync(filePath)) {
-            fs.unlinkSync(filePath);
-        }
+            const filePath = path.join(GALLERY_DIR, item.filename);
+            if (fs.existsSync(filePath)) {
+                fs.unlinkSync(filePath);
+            }
 
-        galleryRepository.deleteById(idToDelete);
-        sendJson(res, 200, { success: true });
+            galleryRepository.deleteById(idToDelete);
+            sendJson(res, 200, { success: true });
+        } catch (err) {
+            console.error('[AdminGallery DELETE] Error:', err);
+            sendJson(res, 500, { error: err.message });
+        }
         return;
     }
 
@@ -1471,6 +1491,7 @@ const server = http.createServer(async (req, res) => {
 
         // 2. Scan database records for any root GALLERY_DIR files belonging to this user
         const db = new DatabaseSync(DATABASE_PATH);
+        db.exec('PRAGMA busy_timeout = 10000;');
         
         let galleryQuery;
         let galleryParams;
@@ -1579,6 +1600,7 @@ const server = http.createServer(async (req, res) => {
 
         try {
             const db = new DatabaseSync(DATABASE_PATH);
+            db.exec('PRAGMA busy_timeout = 10000;');
             const users = db.prepare(`SELECT id, username, nickname, role, created_at FROM users`).all();
             
             const guestDevices = new Set();
@@ -1756,6 +1778,7 @@ const server = http.createServer(async (req, res) => {
             if (targetType === 'user') {
                 userId = targetId;
                 const db = new DatabaseSync(DATABASE_PATH);
+                db.exec('PRAGMA busy_timeout = 10000;');
                 const u = db.prepare('SELECT username FROM users WHERE id = ?').get(userId);
                 if (!u) {
                     sendJson(res, 404, { error: '用户不存在' });
@@ -1788,6 +1811,7 @@ const server = http.createServer(async (req, res) => {
             }
 
             const db = new DatabaseSync(DATABASE_PATH);
+            db.exec('PRAGMA busy_timeout = 10000;');
             let galleryQuery;
             let galleryParams;
             if (userId) {

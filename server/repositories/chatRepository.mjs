@@ -52,30 +52,33 @@ export function createChatRepository({ dataDir, dbPath, maxSessions = 50 }) {
     `);
 
     function trimSessions({ deviceId = null, userId = null }) {
-        if (userId) {
-            db.prepare(`
-                DELETE FROM chat_sessions
-                WHERE user_id IS ?
-                  AND id IN (
+        try {
+            let rows;
+            if (userId) {
+                rows = db.prepare(`
                     SELECT id FROM chat_sessions
                     WHERE user_id IS ?
                     ORDER BY timestamp DESC, id DESC
-                    LIMIT -1 OFFSET ?
-                  )
-            `).run(userId, userId, maxSessions);
-            return;
-        }
+                `).all(userId);
+            } else {
+                rows = db.prepare(`
+                    SELECT id FROM chat_sessions
+                    WHERE device_id IS ? AND user_id IS NULL
+                    ORDER BY timestamp DESC, id DESC
+                `).all(deviceId);
+            }
 
-        db.prepare(`
-            DELETE FROM chat_sessions
-            WHERE device_id IS ?
-              AND id IN (
-                SELECT id FROM chat_sessions
-                WHERE device_id IS ?
-                ORDER BY timestamp DESC, id DESC
-                LIMIT -1 OFFSET ?
-            )
-        `).run(deviceId, deviceId, maxSessions);
+            if (rows.length > maxSessions) {
+                const idsToDelete = rows.slice(maxSessions).map(r => r.id);
+                const placeholders = idsToDelete.map(() => '?').join(',');
+                db.prepare(`
+                    DELETE FROM chat_sessions
+                    WHERE id IN (${placeholders})
+                `).run(...idsToDelete);
+            }
+        } catch (e) {
+            console.error('[ChatDB] trimSessions error:', e);
+        }
     }
 
     return {

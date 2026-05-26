@@ -56,30 +56,33 @@ export function createImprintRepository({ dataDir, dbPath, maxItems = 20 }) {
     `);
 
     function trimItems({ deviceId = null, userId = null }) {
-        if (userId) {
-            db.prepare(`
-                DELETE FROM imprint_items
-                WHERE user_id IS ?
-                  AND id IN (
+        try {
+            let rows;
+            if (userId) {
+                rows = db.prepare(`
                     SELECT id FROM imprint_items
                     WHERE user_id IS ?
                     ORDER BY timestamp DESC, id DESC
-                    LIMIT -1 OFFSET ?
-                  )
-            `).run(userId, userId, maxItems);
-            return;
-        }
+                `).all(userId);
+            } else {
+                rows = db.prepare(`
+                    SELECT id FROM imprint_items
+                    WHERE device_id IS ? AND user_id IS NULL
+                    ORDER BY timestamp DESC, id DESC
+                `).all(deviceId);
+            }
 
-        db.prepare(`
-            DELETE FROM imprint_items
-            WHERE device_id IS ?
-              AND id IN (
-                SELECT id FROM imprint_items
-                WHERE device_id IS ?
-                ORDER BY timestamp DESC, id DESC
-                LIMIT -1 OFFSET ?
-            )
-        `).run(deviceId, deviceId, maxItems);
+            if (rows.length > maxItems) {
+                const idsToDelete = rows.slice(maxItems).map(r => r.id);
+                const placeholders = idsToDelete.map(() => '?').join(',');
+                db.prepare(`
+                    DELETE FROM imprint_items
+                    WHERE id IN (${placeholders})
+                `).run(...idsToDelete);
+            }
+        } catch (e) {
+            console.error('[ImprintDB] trimItems error:', e);
+        }
     }
 
     return {

@@ -592,6 +592,13 @@ async function callLLMImage({ prompt, apiKey, apiUrl, model, aspectRatio, qualit
             response_format: 'url'
         };
 
+        if (mode === 'img2img' && uploadedImage) {
+            const base64Prefix = `data:${uploadedImage.mimeType};base64,`;
+            requestBody.image = uploadedImage.base64.startsWith('data:') 
+                ? uploadedImage.base64 
+                : `${base64Prefix}${uploadedImage.base64}`;
+        }
+
         let response = await fetch(endpoint, {
             method: 'POST',
             headers: {

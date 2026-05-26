@@ -104,14 +104,22 @@ export function createGalleryRepository({ dataDir, dbPath, legacyMetaPath, maxIt
     }
 
     function trimItems() {
-        db.prepare(`
-            DELETE FROM gallery_items
-            WHERE id IN (
+        try {
+            const rows = db.prepare(`
                 SELECT id FROM gallery_items
                 ORDER BY timestamp DESC, id DESC
-                LIMIT -1 OFFSET ?
-            )
-        `).run(maxItems);
+            `).all();
+            if (rows.length > maxItems) {
+                const idsToDelete = rows.slice(maxItems).map(r => r.id);
+                const placeholders = idsToDelete.map(() => '?').join(',');
+                db.prepare(`
+                    DELETE FROM gallery_items
+                    WHERE id IN (${placeholders})
+                `).run(...idsToDelete);
+            }
+        } catch (e) {
+            console.error('[GalleryDB] trimItems error:', e);
+        }
     }
 
     function listItems() {

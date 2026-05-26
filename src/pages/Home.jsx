@@ -376,6 +376,33 @@ function Home() {
     return finalPrompt
   }
 
+  const isSafetyPolicyError = (message) => {
+    const text = String(message || '').toLowerCase()
+    return text.includes('安全策略') ||
+      text.includes('safety system') ||
+      text.includes('content policy') ||
+      text.includes('safety policy')
+  }
+
+  const rewritePromptForSafety = () => {
+    let saferPrompt = prompt
+      .replace(/\bElsa\s+from\s+Frozen\b/gi, 'an original fantasy ice queen')
+      .replace(/\bFrozen'?s?\s+Elsa\b/gi, 'an original fantasy ice queen')
+      .replace(/\bElsa\b/gi, 'an original fantasy ice queen')
+      .replace(/\bFrozen\b/gi, 'a crystalline winter fantasy kingdom')
+      .replace(/\bDisney\b/gi, 'classic animated fantasy inspiration')
+      .replace(/\bMickey\s+Mouse\b/gi, 'an original cheerful cartoon character')
+      .replace(/\bSpider-?Man\b/gi, 'an original agile masked hero')
+      .replace(/\bHarry\s+Potter\b/gi, 'an original young fantasy wizard')
+
+    if (!/original character|copyrighted character|franchise names/i.test(saferPrompt)) {
+      saferPrompt += ', original character design, not based on any existing copyrighted character, no brand or franchise names'
+    }
+
+    setPrompt(saferPrompt.trim())
+    setError(null)
+  }
+
   const addToHistory = (imageUrl, promptText) => {
     try {
       const newItem = {
@@ -1503,7 +1530,20 @@ function Home() {
               </button>
             </div>
 
-            {error && <div className="error-message">{error}</div>}
+            {error && (
+              <div className="error-message">
+                <div>{error}</div>
+                {isSafetyPolicyError(error) && (
+                  <button
+                    type="button"
+                    className="safety-rewrite-btn"
+                    onClick={rewritePromptForSafety}
+                  >
+                    改写提示词
+                  </button>
+                )}
+              </div>
+            )}
 
 
             {imageUrl && (

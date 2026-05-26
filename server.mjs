@@ -145,6 +145,13 @@ async function resolveImageBuffer(image) {
 // 通用 LLM 调用辅助函数 - 兼容 Gemini 和 OpenAI-compatible (GPT) 接口
 function formatImageGenerationError(err) {
     let errMsg = err.message;
+    const lowerMsg = String(errMsg || '').toLowerCase();
+    if (lowerMsg.includes('rejected by the safety system') ||
+        lowerMsg.includes('safety system') ||
+        lowerMsg.includes('content policy') ||
+        lowerMsg.includes('safety policy')) {
+        return '提示词触发服务商安全策略：请改写为原创角色或泛化描述，避免直接使用知名 IP、影视角色或真实人物名称。';
+    }
     if (errMsg.includes('524') || errMsg.includes('504') || errMsg.includes('timeout') || errMsg.includes('Timeout')) {
         return '生图超时：生图服务商响应时间较长，后台任务已结束。建议稍后重试，或在“设置”中更换更快的生图模型/接口。';
     }
@@ -921,12 +928,7 @@ const server = http.createServer(async (req, res) => {
             sendJson(res, 202, serializeImageJob(job));
         } catch (err) {
             console.error('[ImageGen] 内部错误:', err);
-            let errMsg = err.message;
-            if (errMsg.includes('524') || errMsg.includes('504') || errMsg.includes('timeout') || errMsg.includes('Timeout')) {
-                errMsg = '生图超时：生图服务商响应时间超过了 100 秒限制。建议稍后重试，或在“设置”中更换更快的生图模型/接口。';
-            } else {
-                errMsg = err.message + (err.cause ? ` (${err.cause.message || err.cause})` : '');
-            }
+            const errMsg = formatImageGenerationError(err);
             res.writeHead(500, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: errMsg }));
         }

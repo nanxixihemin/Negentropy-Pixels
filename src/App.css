@@ -819,6 +819,28 @@ input:focus {
   box-shadow: none;
 }
 
+.error-message {
+  margin-top: var(--s-5);
+  color: var(--text-main);
+  line-height: 1.7;
+}
+
+.safety-rewrite-btn {
+  margin-top: var(--s-3);
+  padding: 8px 14px;
+  border: 2px solid var(--border-color);
+  border-radius: var(--r-item);
+  background: var(--highlight);
+  color: var(--text-main);
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 2px 2px 0 var(--secondary);
+}
+
+.safety-rewrite-btn:hover {
+  transform: translate(-1px, -1px);
+}
+
 .modal-btn.confirm {
   background: var(--accent-gradient);
   color: white;
@@ -2501,4 +2523,4 @@ input:focus {
   border: 1px solid var(--border-color);
   font-size: 0.85rem;
   color: var(--text-main);
-}
+}

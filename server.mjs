@@ -125,7 +125,9 @@ async function resolveImageBuffer(image) {
     }
 
     if (/^https?:\/\//i.test(String(image || ''))) {
-        const imageRes = await fetch(image);
+        const imageRes = await fetch(image, {
+            signal: AbortSignal.timeout(120000) // 2 minutes timeout for downloading images
+        });
         if (!imageRes.ok) {
             throw new Error(`远程图片下载失败 (${imageRes.status})`);
         }
@@ -390,7 +392,8 @@ async function callLLMChat({ messages, apiKey, apiUrl, model }) {
         const response = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(requestBody)
+            body: JSON.stringify(requestBody),
+            signal: AbortSignal.timeout(180000) // 3 minutes timeout for Gemini chat
         });
 
         const data = await response.json();
@@ -438,7 +441,8 @@ async function callLLMChat({ messages, apiKey, apiUrl, model }) {
                 model: modelName,
                 messages: formattedMessages,
                 temperature: 0.7
-            })
+            }),
+            signal: AbortSignal.timeout(180000) // 3 minutes timeout for OpenAI-compatible chat
         });
 
         const rawText = await response.text();
@@ -511,7 +515,8 @@ async function callLLMImage({ prompt, apiKey, apiUrl, model, aspectRatio, qualit
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 contents: [{ role: 'user', parts }]
-            })
+            }),
+            signal: AbortSignal.timeout(300000) // 5 minutes timeout for Gemini image generation
         });
 
         const rawText = await response.text();
@@ -593,7 +598,8 @@ async function callLLMImage({ prompt, apiKey, apiUrl, model, aspectRatio, qualit
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${resolvedApiKey}`
             },
-            body: JSON.stringify(requestBody)
+            body: JSON.stringify(requestBody),
+            signal: AbortSignal.timeout(300000) // 5 minutes timeout for OpenAI-compatible image generation
         });
 
         let rawText = await response.text();
@@ -609,7 +615,8 @@ async function callLLMImage({ prompt, apiKey, apiUrl, model, aspectRatio, qualit
                             'Content-Type': 'application/json',
                             'Authorization': `Bearer ${resolvedApiKey}`
                         },
-                        body: JSON.stringify(requestBody)
+                        body: JSON.stringify(requestBody),
+                        signal: AbortSignal.timeout(300000)
                     });
                     rawText = await response.text();
                 }
@@ -740,6 +747,7 @@ const server = http.createServer(async (req, res) => {
                     'Authorization': req.headers.authorization || '',
                 },
                 body: req.method !== 'GET' ? body : undefined,
+                signal: AbortSignal.timeout(300000) // 5 minutes timeout for proxy requests
             });
 
             const data = await proxyRes.text();

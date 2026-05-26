@@ -599,11 +599,16 @@ async function callLLMImage({ prompt, apiKey, apiUrl, model, aspectRatio, qualit
             throw new Error('未配置 API Key');
         }
 
+        const isSiliconFlow = resolvedApiUrl.includes('siliconflow.cn');
+        const isImg2Img = (mode === 'img2img' && uploadedImage);
+
         let endpoint = resolvedApiUrl;
         if (!endpoint.includes('/v1') && !endpoint.includes('/v1beta')) {
             endpoint = endpoint.replace(/\/$/, '') + '/v1';
         }
-        if (!endpoint.endsWith('/images/generations')) {
+        if (isImg2Img && !isSiliconFlow) {
+            endpoint = endpoint.replace(/\/$/, '') + '/images/edits';
+        } else {
             endpoint = endpoint.replace(/\/$/, '') + '/images/generations';
         }
 
@@ -614,61 +619,92 @@ async function callLLMImage({ prompt, apiKey, apiUrl, model, aspectRatio, qualit
         else if (aspectRatio === '4:3') size = '1024x768';
         else if (aspectRatio === '3:4') size = '768x1024';
 
-        const requestBody = {
-            model: modelName,
-            prompt: prompt,
-            n: 1,
-            size: size,
-            response_format: 'url'
-        };
+        let response;
+        let rawText;
+        let requestBody = null;
 
-        if (mode === 'img2img' && uploadedImage) {
-            const base64Prefix = `data:${uploadedImage.mimeType};base64,`;
-            requestBody.image = uploadedImage.base64.startsWith('data:') 
-                ? uploadedImage.base64 
-                : `${base64Prefix}${uploadedImage.base64}`;
-        }
+        if (isImg2Img && !isSiliconFlow) {
+            console.log(`[LLMImage] Calling OpenAI-compatible /images/edits with FormData (img2img)`);
+            const formData = new FormData();
+            
+            const rawBase64 = uploadedImage.base64.startsWith('data:') 
+                ? uploadedImage.base64.split(',')[1] 
+                : uploadedImage.base64;
+            const buffer = Buffer.from(rawBase64, 'base64');
+            const blob = new Blob([buffer], { type: uploadedImage.mimeType || 'image/png' });
+            
+            formData.append('image', blob, 'image.png');
+            formData.append('model', modelName);
+            formData.append('prompt', prompt);
+            formData.append('n', '1');
+            formData.append('size', size);
 
-        let response = await fetch(endpoint, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${resolvedApiKey}`
-            },
-            body: JSON.stringify(requestBody),
-            signal: AbortSignal.timeout(300000) // 5 minutes timeout for OpenAI-compatible image generation
-        });
+            response = await fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${resolvedApiKey}`
+                },
+                body: formData,
+                signal: AbortSignal.timeout(300000) // 5 minutes timeout for OpenAI-compatible image generation
+            });
+            rawText = await response.text();
+        } else {
+            requestBody = {
+                model: modelName,
+                prompt: prompt,
+                n: 1,
+                size: size,
+                response_format: 'url'
+            };
 
-        let rawText = await response.text();
-        if (!response.ok) {
-            // 如果是不支持 response_format 报错，尝试不带该参数（多数 OpenAI-compatible 生图接口会返回 URL）
-            try {
-                const parsedErr = JSON.parse(rawText);
-                if (parsedErr.error?.message?.includes('response_format') || parsedErr.error?.includes('format')) {
-                    delete requestBody.response_format;
-                    response = await fetch(endpoint, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${resolvedApiKey}`
-                        },
-                        body: JSON.stringify(requestBody),
-                        signal: AbortSignal.timeout(300000)
-                    });
-                    rawText = await response.text();
-                }
-            } catch (e) {}
+            if (isImg2Img && isSiliconFlow) {
+                const base64Prefix = `data:${uploadedImage.mimeType};base64,`;
+                requestBody.image = uploadedImage.base64.startsWith('data:') 
+                    ? uploadedImage.base64 
+                    : `${base64Prefix}${uploadedImage.base64}`;
+            }
+
+            response = await fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${resolvedApiKey}`
+                },
+                body: JSON.stringify(requestBody),
+                signal: AbortSignal.timeout(300000)
+            });
+            rawText = await response.text();
 
             if (!response.ok) {
-                let errDetail = rawText;
+                // 如果是不支持 response_format 报错，尝试不带该参数（多数 OpenAI-compatible 生图接口会返回 URL）
                 try {
-                    const parsed = JSON.parse(rawText);
-                    errDetail = parsed.error?.message || parsed.error || rawText;
-                } catch (e) {
-                    errDetail = sanitizeErrorText(rawText, response.status);
-                }
-                throw new Error(`AI 生图接口错误 (${response.status}): ${errDetail}`);
+                    const parsedErr = JSON.parse(rawText);
+                    if (parsedErr.error?.message?.includes('response_format') || parsedErr.error?.includes('format')) {
+                        delete requestBody.response_format;
+                        response = await fetch(endpoint, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${resolvedApiKey}`
+                            },
+                            body: JSON.stringify(requestBody),
+                            signal: AbortSignal.timeout(300000)
+                        });
+                        rawText = await response.text();
+                    }
+                } catch (e) {}
             }
+        }
+
+        if (!response.ok) {
+            let errDetail = rawText;
+            try {
+                const parsed = JSON.parse(rawText);
+                errDetail = parsed.error?.message || parsed.error || rawText;
+            } catch (e) {
+                errDetail = sanitizeErrorText(rawText, response.status);
+            }
+            throw new Error(`AI 生图接口错误 (${response.status}): ${errDetail}`);
         }
 
         let data;

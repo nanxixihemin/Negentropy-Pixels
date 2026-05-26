@@ -144,6 +144,26 @@ async function resolveImageBuffer(image) {
     throw new Error('无效的图片格式：仅支持 data:image base64 或 http(s) 图片地址');
 }
 
+// 清理可能是 HTML 的错误响应，提取可读信息
+function sanitizeErrorText(text, statusCode) {
+    if (!text || typeof text !== 'string') return `HTTP ${statusCode || '未知'} 错误`;
+    const trimmed = text.trim();
+    // 检测 HTML 响应（Cloudflare / Nginx / Apache 等网关返回的错误页）
+    if (trimmed.startsWith('<!') || trimmed.startsWith('<html') || trimmed.startsWith('<HTML') || /<\/html>/i.test(trimmed)) {
+        // 尝试从 <title> 或 <h1> 提取简短描述
+        const titleMatch = trimmed.match(/<title[^>]*>([^<]+)<\/title>/i);
+        const h1Match = trimmed.match(/<h1[^>]*>([^<]*(?:<[^>]+>[^<]*)*)<\/h1>/i);
+        let summary = '';
+        if (titleMatch) summary = titleMatch[1].replace(/\s+/g, ' ').trim();
+        else if (h1Match) summary = h1Match[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+        if (summary) return summary;
+        return `网关错误 (HTTP ${statusCode || '?'})`;
+    }
+    // 非 HTML，截断到合理长度
+    if (trimmed.length > 300) return trimmed.substring(0, 300) + '...';
+    return trimmed;
+}
+
 // 通用 LLM 调用辅助函数 - 兼容 Gemini 和 OpenAI-compatible (GPT) 接口
 function formatImageGenerationError(err) {
     let errMsg = err.message;
@@ -154,7 +174,13 @@ function formatImageGenerationError(err) {
         lowerMsg.includes('safety policy')) {
         return '提示词触发服务商安全策略：请改写为原创角色或泛化描述，避免直接使用知名 IP、影视角色或真实人物名称。';
     }
-    if (errMsg.includes('524') || errMsg.includes('504') || errMsg.includes('timeout') || errMsg.includes('Timeout')) {
+    if (lowerMsg.includes('502') || lowerMsg.includes('bad gateway')) {
+        return '生图接口网关错误 (502)：API 服务商暂时不可用。建议稍后重试，或在“设置”中切换其他 API 地址/模型。';
+    }
+    if (lowerMsg.includes('503') || lowerMsg.includes('service unavailable')) {
+        return '生图接口暂时不可用 (503)：服务商过载或维护中。建议稍后重试，或在“设置”中切换其他 API 地址/模型。';
+    }
+    if (errMsg.includes('524') || errMsg.includes('504') || lowerMsg.includes('timeout')) {
         return '生图超时：生图服务商响应时间较长，后台任务已结束。建议稍后重试，或在“设置”中更换更快的生图模型/接口。';
     }
     return err.message + (err.cause ? ` (${err.cause.message || err.cause})` : '');
@@ -451,7 +477,9 @@ async function callLLMChat({ messages, apiKey, apiUrl, model }) {
             try {
                 const parsed = JSON.parse(rawText);
                 errDetail = parsed.error?.message || parsed.error || rawText;
-            } catch (e) {}
+            } catch (e) {
+                errDetail = sanitizeErrorText(rawText, response.status);
+            }
             throw new Error(`AI 接口错误 (${response.status}): ${errDetail}`);
         }
 
@@ -525,7 +553,9 @@ async function callLLMImage({ prompt, apiKey, apiUrl, model, aspectRatio, qualit
             try {
                 const parsed = JSON.parse(rawText);
                 errDetail = parsed.error?.message || parsed.error || rawText;
-            } catch (e) {}
+            } catch (e) {
+                errDetail = sanitizeErrorText(rawText, response.status);
+            }
             throw new Error(`Gemini API Error (${response.status}): ${errDetail}`);
         }
 
@@ -634,7 +664,9 @@ async function callLLMImage({ prompt, apiKey, apiUrl, model, aspectRatio, qualit
                 try {
                     const parsed = JSON.parse(rawText);
                     errDetail = parsed.error?.message || parsed.error || rawText;
-                } catch (e) {}
+                } catch (e) {
+                    errDetail = sanitizeErrorText(rawText, response.status);
+                }
                 throw new Error(`AI 生图接口错误 (${response.status}): ${errDetail}`);
             }
         }

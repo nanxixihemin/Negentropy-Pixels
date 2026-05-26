@@ -45,6 +45,7 @@ const DEFAULT_TEMPLATES = [
 const AVAILABLE_MODELS = [
   { id: 'gemini-3-pro-image-preview', label: 'Gemini 3 Pro Image (Preview, 推荐)' },
   { id: 'gpt-image2', label: 'gpt-image2' },
+  { id: 'Kwai-Kolors/Kolors', label: 'Kwai-Kolors/Kolors (硅基流动/图生图推荐)' },
   { id: 'custom', label: '自定义模型...' }
 ]
 
